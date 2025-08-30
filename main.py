@@ -22,7 +22,7 @@ def main():
         profile_crawler = ProfileCrawler()
         
         try:
-            profiles = profile_crawler.crawl_from_csv('output/all_sellers.csv')
+            profiles = profile_crawler.crawl_from_csv('output/all_sellers.csv', limit=3)
             print(f"프로필 크롤링 완료: {len(profiles)}명")
         finally:
             profile_crawler.close()

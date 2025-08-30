@@ -24,12 +24,16 @@ class BaseCrawler:
         return driver
     
     def save_data(self, data, filename):
-        """데이터 저장"""
+        """데이터 저장 - 덮어쓰기 모드"""
         if not data:
             return
-
+            
         df = pd.DataFrame(data)
-        df.to_csv(f'output/{filename}.csv', mode='a', header=not pd.io.common.file_exists(f'output/{filename}.csv'), index=False, encoding='utf-8-sig')
+        filepath = f'output/{filename}.csv'
+        
+        # mode='w'로 변경하여 덮어쓰기
+        df.to_csv(filepath, mode='w', header=True, index=False, encoding='utf-8-sig')
+        print(f"데이터 저장 완료: {filepath} ({len(data)}개 항목)")
     
     def close(self):
         """브라우저 종료"""
@@ -212,68 +216,145 @@ class ProfileCrawler(BaseCrawler):
         """보유 기술 추출"""
         print("보유 기술 추출")
         return self._extract_section_data("보유 기술", "ProfileSkillSection__tag")
-    
-    def _extract_specialties(self):
-        """전문분야 및 상세분야 추출 (IT·프로그래밍만)"""
-        print("전문분야 추출")
-        try:
-            # 전문분야 섹션 찾기
-            section_titles = self.driver.find_elements(By.CLASS_NAME, "ProfileSectionTitle")
-            
-            for title in section_titles:
-                if "전문분야 및 상세분야" in title.text:
-                    # 형제 요소에서 전문분야들 찾기
-                    parent = title.find_element(By.XPATH, "./..")
-                    specialties = parent.find_elements(By.CLASS_NAME, "ProfileSkillSection__specialty")
-                    
-                    for specialty in specialties:
-                        specialty_title = specialty.text.strip()
-                        if "IT·프로그래밍" in specialty_title:
-                            print(f"IT·프로그래밍 전문분야 발견: {specialty_title}")
-                            # 해당 전문분야의 태그들 추출
-                            try:
-                                # 전문분야 다음의 태그들 찾기
-                                parent_section = specialty.find_element(By.XPATH, "./../../..")
-                                tags = parent_section.find_elements(By.CLASS_NAME, "ProfileSkillSection__tag")
-                                tag_texts = [tag.text.strip() for tag in tags if tag.text.strip()]
-                                return tag_texts
-                            except Exception as e:
-                                print(f"전문분야 태그 추출 실패: {e}")
-                                return []
-            
-            print("IT·프로그래밍 전문분야를 찾을 수 없습니다.")
-            return []
-            
-        except Exception as e:
-            print(f"전문분야 추출 실패: {e}")
-            return []
-    
+
     def _extract_section_data(self, section_title, tag_class):
-        """섹션별 데이터 추출 공통 함수"""
         try:
-            # 섹션 제목들 찾기
             section_titles = self.driver.find_elements(By.CLASS_NAME, "ProfileSectionTitle")
             
             for title in section_titles:
-                if section_title in title.text:
+                if section_title in title.text.strip():
                     print(f"{section_title} 섹션 발견")
-                    # 형제 요소에서 태그들 찾기
-                    parent = title.find_element(By.XPATH, "./..")
+                    
+                    # XPath 패턴 분석:
+                    # 제목: .../div[1]/div[1]  
+                    # 내용: .../div[1]/div[2]/div
+                    # 즉, div[1] → div[2]로 이동해서 태그들 찾기
+                    
                     try:
-                        tag_group = parent.find_element(By.CLASS_NAME, "ProfileSkillSection_tag-group")
-                        tags = tag_group.find_elements(By.CLASS_NAME, tag_class)
+                        # 제목의 부모 요소 (div[1])
+                        parent_div = title.find_element(By.XPATH, "./..")
+                        
+                        # 형제 요소인 div[2] 찾기  
+                        content_div = parent_div.find_element(By.XPATH, "./div[2]")
+                        
+                        # 그 안의 모든 태그들 찾기
+                        tags = content_div.find_elements(By.CLASS_NAME, tag_class)
+                        
                         tag_texts = [tag.text.strip() for tag in tags if tag.text.strip()]
-                        print(f"{section_title} 추출 완료: {len(tag_texts)}개")
+                        print(f"{section_title} 추출 완료: {len(tag_texts)}개 - {tag_texts}")
                         return tag_texts
+                        
                     except Exception as e:
                         print(f"{section_title} 태그 추출 실패: {e}")
-                        return []
+                        
+                        # 대안: 더 넓은 범위에서 태그 찾기
+                        try:
+                            # 제목 다음 형제 요소들에서 모든 태그 검색
+                            next_sibling = title.find_element(By.XPATH, "./following-sibling::*")
+                            tags = next_sibling.find_elements(By.CLASS_NAME, tag_class)
+                            tag_texts = [tag.text.strip() for tag in tags if tag.text.strip()]
+                            print(f"{section_title} 대안 방법으로 추출: {tag_texts}")
+                            return tag_texts
+                        except:
+                            return []
             
             print(f"{section_title} 섹션을 찾을 수 없습니다.")
             return []
             
         except Exception as e:
             print(f"{section_title} 추출 실패: {e}")
+            return []
+
+    def _extract_specialties(self):
+        """전문분야 및 상세분야 추출 (IT·프로그래밍만) - 구조 기반 수정"""
+        try:
+            section_titles = self.driver.find_elements(By.CLASS_NAME, "ProfileSectionTitle")
+            
+            for title in section_titles:
+                if "전문분야" in title.text:
+                    print("전문분야 섹션 발견")
+                    
+                    # 전문분야 섹션 전체 컨테이너 찾기
+                    section_container = title.find_element(By.XPATH, "./../../..")
+                    
+                    # IT·프로그래밍 제목을 가진 div 찾기
+                    it_titles = section_container.find_elements(By.CLASS_NAME, "ProfileSkillSection__title")
+                    
+                    for it_title in it_titles:
+                        title_text = it_title.text.strip()
+                        print(f"전문분야 제목 발견: '{title_text}'")
+                        
+                        if "IT" in title_text and "프로그래밍" in title_text:
+                            print(f"IT·프로그래밍 전문분야 발견: {title_text}")
+                            
+                            try:
+                                # IT·프로그래밍 제목 다음에 오는 태그들 찾기
+                                # 방법 1: 다음 형제 요소들에서 태그 찾기
+                                next_elements = it_title.find_elements(By.XPATH, "./following-sibling::*")
+                                
+                                all_tags = []
+                                for element in next_elements:
+                                    # 다음 ProfileSkillSection__title이 나오면 중단
+                                    if "ProfileSkillSection__title" in element.get_attribute("class"):
+                                        break
+                                    
+                                    # 태그들 찾기
+                                    tags = element.find_elements(By.CLASS_NAME, "ProfileSkillSection__tag")
+                                    for tag in tags:
+                                        tag_text = tag.text.strip()
+                                        if tag_text:
+                                            all_tags.append(tag_text)
+                                
+                                if all_tags:
+                                    print(f"IT·프로그래밍 태그들: {all_tags}")
+                                    return all_tags
+                                
+                                # 방법 2: 부모 요소에서 태그들 찾기 (바로 다음)
+                                parent = it_title.find_element(By.XPATH, "./..")
+                                tags = parent.find_elements(By.CLASS_NAME, "ProfileSkillSection__tag")
+                                if tags:
+                                    tag_texts = [tag.text.strip() for tag in tags if tag.text.strip()]
+                                    print(f"부모에서 찾은 IT·프로그래밍 태그들: {tag_texts}")
+                                    return tag_texts
+                                    
+                            except Exception as e:
+                                print(f"IT 프로그래밍 태그 추출 실패: {e}")
+                    
+                    # 대안: 텍스트 파싱으로 추출
+                    print("대안 방법: 텍스트 파싱 시도")
+                    specialties = section_container.find_elements(By.CLASS_NAME, "ProfileSkillSection__specialty")
+                    
+                    for specialty in specialties:
+                        full_text = specialty.text.strip()
+                        if "IT·프로그래밍" in full_text:
+                            lines = full_text.split('\n')
+                            
+                            # IT·프로그래밍 이후의 줄들 추출
+                            it_found = False
+                            tags = []
+                            
+                            for line in lines:
+                                line = line.strip()
+                                if "IT·프로그래밍" in line:
+                                    it_found = True
+                                    continue
+                                
+                                if it_found:
+                                    # 다음 전문분야가 나오면 중단
+                                    if line and not line.startswith('·') and '·' in line and len(line) < 20:
+                                        break
+                                    if line:
+                                        tags.append(line)
+                            
+                            if tags:
+                                print(f"텍스트 파싱으로 추출한 IT·프로그래밍 태그들: {tags}")
+                                return tags
+            
+            print("IT·프로그래밍 전문분야를 찾을 수 없습니다.")
+            return []
+            
+        except Exception as e:
+            print(f"전문분야 추출 실패: {e}")
             return []
     
     def crawl_multiple_profiles(self, seller_names):
@@ -295,12 +376,18 @@ class ProfileCrawler(BaseCrawler):
         
         return all_profiles
     
-    def crawl_from_csv(self, csv_file_path):
+    def crawl_from_csv(self, csv_file_path, limit=None):
         """CSV 파일에서 판매자명을 읽어와서 프로필 크롤링"""
         try:
             df = pd.read_csv(csv_file_path)
             seller_names = df['seller_name'].unique().tolist()  # 중복 제거
-            print(f"CSV에서 {len(seller_names)}명의 판매자 발견")
+            
+            # 개발 단계에서 제한 적용
+            if limit:
+                seller_names = seller_names[:limit]
+                print(f"개발 모드: {limit}명만 크롤링합니다")
+            
+            print(f"CSV에서 {len(seller_names)}명의 판매자 크롤링 예정")
             
             profiles = self.crawl_multiple_profiles(seller_names)
             
