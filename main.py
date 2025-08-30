@@ -1,9 +1,9 @@
 from src.crawler.crawler import SellersCrawler, ProfileCrawler
 
 def main():
-    choice = input("1. 카테고리 크롤링, 2. 프로필 크롤링, 3. 둘 다: ")
+    choice = input("1. 카테고리 크롤링, 2. 프로필 크롤링, 3. 리뷰 크롤링, 4. 셋 다: ")
     
-    if choice in ['1', '3']:
+    if choice in ['1', '4']:
         # 카테고리 크롤링
         print("=== 카테고리 크롤링 시작 ===")
         sellers_crawler = SellersCrawler()
@@ -16,7 +16,7 @@ def main():
         finally:
             sellers_crawler.close()
     
-    if choice in ['2', '3']:
+    if choice in ['2', '4']:
         # 프로필 크롤링
         print("\n=== 프로필 크롤링 시작 ===")
         profile_crawler = ProfileCrawler()
@@ -24,6 +24,22 @@ def main():
         try:
             profiles = profile_crawler.crawl_from_csv('output/all_sellers.csv', limit=3)
             print(f"프로필 크롤링 완료: {len(profiles)}명")
+        finally:
+            profile_crawler.close()
+
+    if choice in ['3', '4']:
+        # 리뷰 크롤링
+        print("\n=== 프로필 크롤링 시작 ===")
+        profile_crawler = ProfileCrawler()
+
+        try:
+            seller_names = ['두들코딩', '푸르미하우스', '트래픽최적화장인']  # 테스트용
+            profiles = profile_crawler.crawl_multiple_profiles_with_reviews(
+                seller_names, 
+                max_review_pages=5
+            )
+            profile_crawler.save_data(profiles, 'profiles_with_reviews')
+            print(f"프로필+리뷰 크롤링 완료: {len(profiles)}명")
         finally:
             profile_crawler.close()
 

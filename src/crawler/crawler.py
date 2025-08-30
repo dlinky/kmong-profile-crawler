@@ -399,3 +399,337 @@ class ProfileCrawler(BaseCrawler):
         except Exception as e:
             print(f"CSV 파일 읽기 실패: {e}")
             return []
+
+    def crawl_reviews(self, seller_name, max_pages=5):
+        """리뷰 크롤링 - 리뷰 섹션 스크롤 포함"""
+        profile_url = f"https://kmong.com/@{seller_name}"
+        
+        try:
+            self.driver.get(profile_url)
+            time.sleep(3)
+            
+            # 리뷰 섹션으로 스크롤
+            try:
+                review_section = self.driver.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__list-group")
+                self.driver.execute_script("arguments[0].scrollIntoView({block: 'start'});", review_section)
+                time.sleep(2)
+                print("리뷰 섹션으로 스크롤 완료")
+            except:
+                print("리뷰 섹션을 찾을 수 없음")
+                return []
+            
+            # 리뷰 크롤링 진행
+            all_reviews = []
+            pages_crawled = 0
+            
+            while pages_crawled < max_pages:
+                current_page = pages_crawled + 1
+                print(f"리뷰 페이지 {current_page} 크롤링 중...")
+                
+                page_reviews = self._extract_reviews_from_page()
+                
+                if not page_reviews:
+                    print("더 이상 리뷰가 없습니다.")
+                    break
+                    
+                all_reviews.extend(page_reviews)
+                print(f"페이지 {current_page}에서 {len(page_reviews)}개 리뷰 수집")
+                pages_crawled += 1
+                
+                if pages_crawled < max_pages:
+                    if not self._go_to_next_review_page():
+                        break
+            
+            return all_reviews
+            
+        except Exception as e:
+            print(f"리뷰 크롤링 실패: {e}")
+            return []
+
+    def _extract_reviews_from_page(self):
+        """리뷰 섹션에서만 리뷰 추출"""
+        reviews = []
+        
+        try:
+            # 리뷰 섹션 내에서만 검색
+            review_section = self.driver.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__list-group")
+            
+            # 해당 섹션 내의 리뷰들만 추출
+            review_cards = review_section.find_elements(By.CLASS_NAME, "RatingList")
+            print(f"리뷰 섹션에서 {len(review_cards)}개 리뷰 발견")
+            
+            for i, card in enumerate(review_cards):
+                try:
+                    # 1. 리뷰 작성 일시
+                    date_info = card.find_element(By.CLASS_NAME, "RatingList__rating-user-info").text.strip()
+                    
+                    # 2. 서비스 정보
+                    service_info = self._extract_service_info(card)
+                    
+                    review_data = {
+                        'review_date': date_info,
+                        'service_title': service_info.get('title', ''),
+                        'work_period': service_info.get('period', ''),
+                        'order_amount': service_info.get('amount', '')
+                    }
+                    
+                    reviews.append(review_data)
+                    print(f"  리뷰 {i+1}: {review_data['service_title'][:30]}...")
+                    
+                except Exception as e:
+                    print(f"개별 리뷰 {i+1} 추출 실패: {e}")
+                    continue
+                    
+        except Exception as e:
+            print(f"리뷰 섹션에서 리뷰 추출 실패: {e}")
+            # 대안: 전체 페이지에서 검색
+            try:
+                review_cards = self.driver.find_elements(By.CLASS_NAME, "RatingList")
+                print(f"전체 페이지에서 {len(review_cards)}개 리뷰 발견 (대안)")
+                # 위와 동일한 추출 로직 적용
+            except:
+                print("전체 페이지에서도 리뷰를 찾을 수 없음")
+        
+        return reviews
+
+    def _extract_service_info(self, card):
+        """서비스 정보 추출"""
+        service_info = {'title': '', 'period': '', 'amount': ''}
+        
+        try:
+            # 서비스 정보 전체 컨테이너
+            service_container = card.find_element(By.CLASS_NAME, "RatingList__buyer-selling-service-gig-info")
+            
+            # 서비스명과 작업 기간을 감싸는 wrap
+            info_wrap = service_container.find_element(By.CLASS_NAME, "RatingList__buyer-selling-service-gig-info-wrap")
+            
+            # 서비스명
+            try:
+                service_title = info_wrap.find_element(By.CLASS_NAME, "RatingList__buyer-selling-service-gig-info-title")
+                service_info['title'] = service_title.text.strip()
+                
+                # 작업 기간 (서비스명 바로 다음 span)
+                try:
+                    period_span = service_title.find_element(By.XPATH, "./following-sibling::span")
+                    service_info['period'] = period_span.text.strip()
+                except Exception as e:
+                    print(f"작업 기간 추출 실패: {e}")
+                    
+            except Exception as e:
+                print(f"서비스명 추출 실패: {e}")
+            
+            # 주문금액 (info_wrap 다음 div 안의 span)
+            try:
+                amount_div = info_wrap.find_element(By.XPATH, "./following-sibling::div")
+                amount_span = amount_div.find_element(By.TAG_NAME, "span")
+                service_info['amount'] = amount_span.text.strip()
+            except Exception as e:
+                print(f"주문금액 추출 실패: {e}")
+                
+        except Exception as e:
+            print(f"서비스 정보 컨테이너 찾기 실패: {e}")
+        
+        return service_info
+
+    def _get_next_available_page(self, current_page):
+        """다음으로 갈 수 있는 페이지 번호 찾기 - 단순화된 로직"""
+        # 단순히 다음 페이지 번호를 반환
+        # 실제 페이지 존재 여부는 _go_to_review_page에서 확인
+        return current_page + 1
+
+    def _go_to_review_page(self, target_page):
+        """특정 페이지로 이동 - 실제 페이지네이션 패턴에 맞춘 로직"""
+        try:
+            pagination = self.driver.find_element(By.CLASS_NAME, "pagination")
+            
+            # 1. 먼저 목표 페이지가 직접 보이는지 확인
+            direct_links = pagination.find_elements(By.XPATH, f".//li[@class='page-item']/a[text()='{target_page}']")
+            
+            if direct_links and len(direct_links) > 0:
+                # 직접 클릭 가능
+                direct_links[0].click()
+                time.sleep(2)
+                print(f"페이지 {target_page} 직접 이동 성공")
+                return True
+            
+            # 2. 목표 페이지가 안 보이면 현재 상황 분석
+            current_active = None
+            try:
+                active_page = pagination.find_element(By.XPATH, ".//li[contains(@class, 'active')]/a")
+                current_active = int(active_page.text)
+                print(f"현재 활성 페이지: {current_active}, 목표: {target_page}")
+            except:
+                print("현재 활성 페이지를 찾을 수 없음")
+            
+            # 3. ">" 버튼으로 앞으로 이동
+            max_attempts = 10  # 무한루프 방지
+            attempts = 0
+            
+            while attempts < max_attempts:
+                attempts += 1
+                
+                # ">" 버튼 찾기
+                next_buttons = pagination.find_elements(By.XPATH, ".//li/a[text()='>']")
+                if not next_buttons:
+                    print("'>' 버튼을 찾을 수 없음")
+                    break
+                
+                next_button = next_buttons[0]
+                parent_li = next_button.find_element(By.XPATH, "./..")
+                
+                # disabled 체크
+                if "disabled" in parent_li.get_attribute("class"):
+                    print("'>' 버튼이 비활성화됨")
+                    break
+                
+                # ">" 클릭
+                next_button.click()
+                time.sleep(3)
+                print(f"'>' 클릭 시도 {attempts}")
+                
+                # 페이지네이션 다시 가져오기
+                try:
+                    pagination = self.driver.find_element(By.CLASS_NAME, "pagination")
+                except:
+                    print("페이지네이션을 다시 찾을 수 없음")
+                    break
+                
+                # 목표 페이지가 이제 보이는지 확인
+                target_links = pagination.find_elements(By.XPATH, f".//li[@class='page-item']/a[text()='{target_page}']")
+                if target_links:
+                    target_links[0].click()
+                    time.sleep(2)
+                    print(f"페이지 {target_page} 이동 성공 (시도 {attempts}회)")
+                    return True
+                
+                # 현재 페이지가 목표보다 크면 너무 멀리 간 것
+                try:
+                    current_active = pagination.find_element(By.XPATH, ".//li[contains(@class, 'active')]/a")
+                    current_num = int(current_active.text)
+                    if current_num >= target_page:
+                        print(f"목표 페이지 {target_page}를 지나쳤음 (현재: {current_num})")
+                        break
+                except:
+                    pass
+            
+            print(f"페이지 {target_page} 이동 실패")
+            return False
+            
+        except Exception as e:
+            print(f"페이지 {target_page} 이동 중 오류: {e}")
+            return False
+
+    def _go_to_next_review_page(self):
+        """리뷰 다음 페이지 이동 - 안정성 강화"""
+        try:
+            # 리뷰 섹션을 매번 새로 찾기
+            review_section = self.driver.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__list-group")
+            
+            # 현재 페이지 번호 확인 (디버깅용)
+            try:
+                current_pagination = review_section.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__pagination")
+                active_page = current_pagination.find_element(By.XPATH, ".//li[contains(@class, 'active')]/a")
+                current_page_num = active_page.text
+                print(f"현재 리뷰 페이지: {current_page_num}")
+            except:
+                print("현재 페이지 번호 확인 불가")
+            
+            # 페이지네이션을 매번 새로 찾기 (DOM 재생성 대응)
+            pagination = review_section.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__pagination")
+            next_buttons = pagination.find_elements(By.XPATH, ".//li/a[text()='>']")
+            
+            if not next_buttons:
+                print("리뷰 '>' 버튼을 찾을 수 없음")
+                return False
+            
+            next_button = next_buttons[0]
+            parent_li = next_button.find_element(By.XPATH, "./..")
+            
+            # 상태 확인 강화
+            li_class = parent_li.get_attribute("class") or ""
+            tabindex = next_button.get_attribute("tabindex") or "0"
+            
+            print(f"버튼 상태 - class: '{li_class}', tabindex: '{tabindex}'")
+            
+            if "disabled" in li_class or tabindex == "-1":
+                print("리뷰 다음 페이지 버튼이 비활성화됨")
+                return False
+            
+            # 클릭 전 잠시 대기
+            time.sleep(1)
+            
+            # JavaScript 클릭
+            self.driver.execute_script("arguments[0].click();", next_button)
+            print("리뷰 다음 페이지 버튼 클릭")
+            
+            # 페이지 변경 대기 - 더 긴 시간
+            time.sleep(2)
+            
+            # 페이지 변경 확인
+            try:
+                new_section = self.driver.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__list-group")
+                new_pagination = new_section.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__pagination")
+                new_active = new_pagination.find_element(By.XPATH, ".//li[contains(@class, 'active')]/a")
+                new_page_num = new_active.text
+                print(f"새 리뷰 페이지: {new_page_num}")
+                
+                if new_page_num == current_page_num:
+                    print("경고: 페이지가 변경되지 않음")
+                    return False
+                    
+            except Exception as e:
+                print(f"페이지 변경 확인 실패: {e}")
+            
+            # 새 리뷰 데이터 로딩 대기
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    lambda driver: len(driver.find_elements(By.CLASS_NAME, "RatingList")) > 0
+                )
+                print("새 리뷰 데이터 로딩 확인")
+            except:
+                print("새 리뷰 데이터 로딩 대기 시간 초과")
+            
+            return True
+            
+        except Exception as e:
+            print(f"리뷰 다음 페이지 이동 실패: {e}")
+            return False
+
+    def crawl_seller_profile_with_reviews(self, seller_name, max_review_pages=3):
+        """프로필 + 리뷰 통합 크롤링"""
+        print(f"\n=== {seller_name} 프로필 + 리뷰 크롤링 시작 ===")
+        
+        # 기본 프로필 정보 크롤링
+        profile_data = self.crawl_seller_profile(seller_name)
+        
+        # 리뷰 크롤링 추가
+        try:
+            reviews = self.crawl_reviews(seller_name, max_pages=max_review_pages)
+            profile_data['reviews'] = reviews
+            profile_data['total_reviews'] = len(reviews)
+            print(f"리뷰 크롤링 완료: {len(reviews)}개")
+        except Exception as e:
+            print(f"리뷰 크롤링 실패: {e}")
+            profile_data['reviews'] = []
+            profile_data['total_reviews'] = 0
+        
+        return profile_data
+
+    def crawl_multiple_profiles_with_reviews(self, seller_names, max_review_pages=2):
+        """여러 판매자 프로필 + 리뷰 크롤링"""
+        all_profiles = []
+        
+        for i, seller_name in enumerate(seller_names, 1):
+            print(f"\n=== 프로필 {i}/{len(seller_names)}: {seller_name} ===")
+            
+            profile_data = self.crawl_seller_profile_with_reviews(seller_name, max_review_pages)
+            all_profiles.append(profile_data)
+            
+            # 중간 저장 (10개씩)
+            if i % 10 == 0:
+                self.save_data(all_profiles[-10:], f'profiles_with_reviews_batch_{i//10}')
+            
+            # 요청 간격 조절 (리뷰까지 크롤링하면 시간이 더 걸림)
+            time.sleep(3)
+        
+        return all_profiles
