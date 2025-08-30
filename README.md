@@ -51,3 +51,15 @@ while 반복 돌리다가 서비스 갯수가 0개로 뜨면 멈춤
 경력 관련 섹션 : //*[@class="DescriptionDetailSection"]
 제목 : /[@class="ProfileSectionTitle"]
 내용 : /[@class="ProfileSkillSection__tag"]
+
+리뷰 관련 박스 : //*[@id="router-view"]/*[@class="RatingList"]
+리뷰 날짜 : /*[@class="RatingList__rating-user-info"]
+리뷰 서비스 : /*[@class="RatingList__buyer-selling-service-gig-info-title"]
+작업기간 : /*[@class="RatingList__buyer-selling-service-gig-info-wrap"]/span[1]
+
+서비스 섹션 : //*[@class="ProfileServiceListSection__gig-box"]
+각 박스 : //*[@class="GigList flex-gig ProfileServiceListSection__gig-item"]
+링크 : /a href
+가격 : /*[@class="GigList__price-wrapper"]/span
+
+4. 서비스 별 가격 조회

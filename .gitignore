@@ -1,2 +1,4 @@
 output/
 logs/
+src/crawler/__pycache__/
+chromedriver-mac-arm64/
