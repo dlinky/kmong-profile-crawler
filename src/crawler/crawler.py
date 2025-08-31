@@ -733,3 +733,266 @@ class ProfileCrawler(BaseCrawler):
             time.sleep(3)
         
         return all_profiles
+
+    def crawl_services(self, seller_name):
+        """판매자의 서비스 정보 크롤링"""
+        profile_url = f"https://kmong.com/@{seller_name}"
+        
+        try:
+            self.driver.get(profile_url)
+            time.sleep(3)
+            
+            # 서비스 탭 클릭 (필요한 경우)
+            try:
+                service_tab = self.driver.find_element(By.XPATH, "//button[contains(text(), '서비스') or contains(text(), '포트폴리오')]")
+                service_tab.click()
+                time.sleep(2)
+            except:
+                print("서비스 탭을 찾을 수 없음 (이미 표시되어 있을 수 있음)")
+            
+            # 서비스 목록 크롤링
+            all_services = []
+            services = self._get_service_list()
+            
+            for i, service_url in enumerate(services):
+                print(f"서비스 {i+1}/{len(services)} 크롤링: {service_url}")
+                service_data = self.crawl_single_service(service_url)
+                if service_data:
+                    all_services.append(service_data)
+                time.sleep(2)  # 서비스 간 대기
+            
+            return all_services
+            
+        except Exception as e:
+            print(f"서비스 크롤링 실패: {e}")
+            return []
+
+    def _get_service_list(self):
+        """서비스 목록 URL들 수집"""
+        service_urls = []
+        try:
+            # 서비스 카드들에서 URL 추출
+            service_cards = self.driver.find_elements(By.XPATH, "//a[contains(@href, '/gig/')]")
+            for card in service_cards:
+                url = card.get_attribute('href')
+                if url and url not in service_urls:
+                    service_urls.append(url)
+            
+            print(f"{len(service_urls)}개 서비스 URL 발견")
+            return service_urls[:5]  # 테스트용으로 5개만
+            
+        except Exception as e:
+            print(f"서비스 목록 수집 실패: {e}")
+            return []
+
+    def crawl_single_service(self, service_url):
+        """개별 서비스 페이지 크롤링"""
+        try:
+            self.driver.get(service_url)
+            time.sleep(3)
+            
+            service_data = {
+                'service_url': service_url,
+                'packages': self._extract_package_prices(),
+                'skill_level': self._extract_skill_level(),
+                'team_size': self._extract_team_size()
+            }
+            
+            return service_data
+            
+        except Exception as e:
+            print(f"서비스 페이지 크롤링 실패: {e}")
+            return None
+
+    def _extract_package_prices(self):
+        """패키지별 가격 추출 - 개선된 버전"""
+        packages = {}
+        
+        try:
+            # 패키지 버튼들이 있는 컨테이너 찾기
+            package_container = self.driver.find_element(
+                By.XPATH, "//*[@class='relative flex w-full rounded-t-lg border border-b-0 border-gray-300']"
+            )
+            
+            # 패키지 버튼들 찾기
+            package_buttons = package_container.find_elements(By.TAG_NAME, "button")
+            
+            if not package_buttons:
+                # 버튼이 없으면 기본 가격만 추출
+                return self._extract_single_price()
+            else:
+                # 각 패키지 버튼 클릭해서 가격 수집
+                package_types = ['STANDARD', 'DELUXE', 'PREMIUM']
+                
+                for i, button in enumerate(package_buttons):
+                    try:
+                        package_name = package_types[i] if i < len(package_types) else f'PACKAGE_{i+1}'
+                        
+                        print(f"{package_name} 패키지 가격 추출 시도")
+                        
+                        # 버튼 클릭
+                        self.driver.execute_script("arguments[0].click();", button)
+                        time.sleep(2)  # 로딩 대기시간 증가
+                        
+                        # 여러 방법으로 가격 찾기
+                        price = self._find_price_with_multiple_selectors()
+                        
+                        if price:
+                            packages[package_name] = price
+                            print(f"{package_name} 가격: {price}")
+                        else:
+                            print(f"{package_name} 가격을 찾을 수 없음")
+                        
+                    except Exception as e:
+                        print(f"패키지 {i+1} 가격 추출 실패: {e}")
+                        continue
+            
+            return packages
+            
+        except Exception as e:
+            print(f"패키지 컨테이너 찾기 실패: {e}")
+            # 대안: 단일 가격 시도
+            return self._extract_single_price()
+
+    def _extract_single_price(self):
+        """단일 가격 추출"""
+        price = self._find_price_with_multiple_selectors()
+        if price:
+            return {'SINGLE': price}
+        return {}
+
+    def _find_price_with_multiple_selectors(self):
+        """여러 선택자로 가격 찾기"""
+        price_selectors = [
+            "//*[@class='text-[18px] font-bold leading-[27px] text-gray-800 flex items-center gap-1']",
+            "//*[contains(@class, 'font-bold') and contains(text(), '원')]",
+            "//*[contains(@class, 'price')]",
+            "//*[contains(text(), '원') and contains(@class, 'font-bold')]",
+            "//*[contains(@class, 'text-') and contains(@class, 'font-bold')]//text()[contains(., '원')]/..",
+        ]
+        
+        for selector in price_selectors:
+            try:
+                elements = self.driver.find_elements(By.XPATH, selector)
+                for element in elements:
+                    text = element.text.strip()
+                    if text and ('원' in text or ',' in text):  # 가격으로 보이는 텍스트
+                        print(f"가격 발견 (선택자: {selector[:50]}...): {text}")
+                        return text
+            except Exception as e:
+                continue
+        
+        print("모든 가격 선택자로 가격을 찾을 수 없음")
+        
+        # 디버깅: 페이지의 모든 가격 관련 텍스트 출력
+        try:
+            all_elements = self.driver.find_elements(By.XPATH, "//*[contains(text(), '원')]")
+            print("페이지의 모든 '원' 포함 텍스트:")
+            for i, elem in enumerate(all_elements[:5]):  # 처음 5개만
+                try:
+                    print(f"  {i+1}: '{elem.text}' (태그: {elem.tag_name}, 클래스: {elem.get_attribute('class')})")
+                except:
+                    pass
+        except:
+            pass
+        
+        return ""
+
+    def _extract_skill_level(self):
+        """기술 수준 추출"""
+        try:
+            # id="10" 박스 찾기
+            info_box = self.driver.find_element(By.XPATH, "//div[@id='10']")
+            
+            # 기술 수준 제목 찾기
+            skill_titles = info_box.find_elements(By.XPATH, ".//*[contains(text(), '기술') or contains(text(), '수준') or contains(text(), 'Skill')]")
+            
+            for title in skill_titles:
+                try:
+                    # 제목 바로 밑의 값 찾기
+                    value_span = title.find_element(By.XPATH, "./following-sibling::div/div/div/span")
+                    skill_level = value_span.text.strip()
+                    print(f"기술 수준: {skill_level}")
+                    return skill_level
+                except:
+                    # 다른 구조 시도
+                    try:
+                        parent = title.find_element(By.XPATH, "./..")
+                        value_span = parent.find_element(By.XPATH, ".//span")
+                        skill_level = value_span.text.strip()
+                        print(f"기술 수준: {skill_level}")
+                        return skill_level
+                    except:
+                        continue
+            
+            print("기술 수준을 찾을 수 없음")
+            return ""
+            
+        except Exception as e:
+            print(f"기술 수준 추출 실패: {e}")
+            return ""
+
+    def _extract_team_size(self):
+        """팀 규모 추출"""
+        try:
+            # id="10" 박스 찾기
+            info_box = self.driver.find_element(By.XPATH, "//div[@id='10']")
+            
+            # 팀 규모 제목 찾기
+            team_titles = info_box.find_elements(By.XPATH, ".//*[contains(text(), '팀') or contains(text(), '규모') or contains(text(), 'Team')]")
+            
+            for title in team_titles:
+                try:
+                    # 제목 바로 밑의 값 찾기
+                    value_span = title.find_element(By.XPATH, "./following-sibling::div/div/div/span")
+                    team_size = value_span.text.strip()
+                    print(f"팀 규모: {team_size}")
+                    return team_size
+                except:
+                    # 다른 구조 시도
+                    try:
+                        parent = title.find_element(By.XPATH, "./..")
+                        value_span = parent.find_element(By.XPATH, ".//span")
+                        team_size = value_span.text.strip()
+                        print(f"팀 규모: {team_size}")
+                        return team_size
+                    except:
+                        continue
+            
+            print("팀 규모를 찾을 수 없음")
+            return ""
+            
+        except Exception as e:
+            print(f"팀 규모 추출 실패: {e}")
+            return ""
+
+    def crawl_seller_profile_complete(self, seller_name, max_review_pages=2):
+        """프로필 + 리뷰 + 서비스 통합 크롤링"""
+        print(f"\n=== {seller_name} 전체 데이터 크롤링 시작 ===")
+        
+        # 1. 기본 프로필 정보
+        profile_data = self.crawl_seller_profile(seller_name)
+        
+        # 2. 리뷰 크롤링
+        try:
+            reviews = self.crawl_reviews(seller_name, max_pages=max_review_pages)
+            profile_data['reviews'] = reviews
+            profile_data['total_reviews'] = len(reviews)
+            print(f"리뷰 크롤링 완료: {len(reviews)}개")
+        except Exception as e:
+            print(f"리뷰 크롤링 실패: {e}")
+            profile_data['reviews'] = []
+            profile_data['total_reviews'] = 0
+        
+        # 3. 서비스 크롤링
+        try:
+            services = self.crawl_services(seller_name)
+            profile_data['services'] = services
+            profile_data['total_services'] = len(services)
+            print(f"서비스 크롤링 완료: {len(services)}개")
+        except Exception as e:
+            print(f"서비스 크롤링 실패: {e}")
+            profile_data['services'] = []
+            profile_data['total_services'] = 0
+        
+        return profile_data

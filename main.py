@@ -1,9 +1,9 @@
 from src.crawler.crawler import SellersCrawler, ProfileCrawler
 
 def main():
-    choice = input("1. 카테고리 크롤링, 2. 프로필 크롤링, 3. 리뷰 크롤링, 4. 셋 다: ")
+    choice = input("1. 카테고리 크롤링, 2. 프로필 크롤링, 3. 리뷰 크롤링, 4. 서비스 크롤링, 5. 전부다 : ")
     
-    if choice in ['1', '4']:
+    if choice in ['1', '5']:
         # 카테고리 크롤링
         print("=== 카테고리 크롤링 시작 ===")
         sellers_crawler = SellersCrawler()
@@ -16,7 +16,7 @@ def main():
         finally:
             sellers_crawler.close()
     
-    if choice in ['2', '4']:
+    if choice in ['2', '5']:
         # 프로필 크롤링
         print("\n=== 프로필 크롤링 시작 ===")
         profile_crawler = ProfileCrawler()
@@ -27,7 +27,7 @@ def main():
         finally:
             profile_crawler.close()
 
-    if choice in ['3', '4']:
+    if choice in ['3', '5']:
         # 리뷰 크롤링
         print("\n=== 프로필 크롤링 시작 ===")
         profile_crawler = ProfileCrawler()
@@ -40,6 +40,26 @@ def main():
             )
             profile_crawler.save_data(profiles, 'profiles_with_reviews')
             print(f"프로필+리뷰 크롤링 완료: {len(profiles)}명")
+        finally:
+            profile_crawler.close()
+
+    if choice in ['4', '5']:
+        # 프로필 + 리뷰 + 서비스 크롤링
+        profile_crawler = ProfileCrawler()
+        try:
+            # 전체 데이터 크롤링 (프로필 + 리뷰 + 서비스)
+            seller_names = ['두들코딩', '푸르미하우스'] 
+            
+            all_data = []
+            for seller in seller_names:
+                complete_data = profile_crawler.crawl_seller_profile_complete(
+                    seller, 
+                    max_review_pages=2
+                )
+                all_data.append(complete_data)
+            
+            profile_crawler.save_data(all_data, 'complete_profiles')
+            print(f"전체 크롤링 완료: {len(all_data)}명")
         finally:
             profile_crawler.close()
 
