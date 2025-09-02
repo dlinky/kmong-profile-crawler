@@ -7,6 +7,11 @@ import pandas as pd
 import json
 import time
 import re
+from datetime import datetime
+import time
+
+def log(message):
+    print(f"[{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] {message}")
 
 class BaseCrawler:
     def __init__(self):
@@ -47,7 +52,7 @@ class BaseCrawler:
         
         # mode='w'로 변경하여 덮어쓰기
         df.to_csv(filepath, mode='w', header=True, index=False, encoding='utf-8-sig')
-        print(f"데이터 저장 완료: {filepath} ({len(data)}개 항목)")
+        log(f"데이터 저장 완료: {filepath} ({len(data)}개 항목)")
     
     def close(self):
         """브라우저 종료"""
@@ -66,15 +71,15 @@ class SellersCrawler(BaseCrawler):
         page = 1
 
         self.driver.get(f"https://kmong.com/category/{category_id}?page={page}")
-        time.sleep(5)
+        time.sleep(2)
         
         while True:
-            print(f"카테고리 {category_id}, 페이지 {page} 크롤링 중...")
+            log(f"카테고리 {category_id}, 페이지 {page} 크롤링 중...")
             
             # 페이지 접속
             url = f"https://kmong.com/category/{category_id}?page={page}"
             self.driver.get(url)
-            time.sleep(3)
+            time.sleep(2)
             
             # 서비스 개수 확인
             try:
@@ -82,32 +87,32 @@ class SellersCrawler(BaseCrawler):
                     By.XPATH, "//*[@id='__next']/div/div/div/div/main/div/div[2]/p"
                 )
                 service_count_text = service_count_element.text
-                print(f"서비스 개수: {service_count_text}")
+                log(f"서비스 개수: {service_count_text}")
                 
                 # "0개의 서비스"면 종료
                 if "0개의 서비스" in service_count_text:
-                    print(f"카테고리 {category_id} 크롤링 완료 (총 {len(all_sellers)}명)")
+                    log(f"카테고리 {category_id} 크롤링 완료 (총 {len(all_sellers)}명)")
                     break
                     
             except Exception as e:
-                print(f"서비스 개수 확인 실패: {e}")
+                log(f"서비스 개수 확인 실패: {e}")
                 break
             
             # 해당 페이지의 판매자들 수집
             page_sellers = self._extract_sellers_from_page()
             
             if not page_sellers:
-                print("더 이상 판매자가 없습니다.")
+                log("더 이상 판매자가 없습니다.")
                 break
                 
             all_sellers.extend(page_sellers)
-            print(f"페이지 {page}에서 {len(page_sellers)}명 수집")
+            log(f"페이지 {page}에서 {len(page_sellers)}명 수집")
             
             page += 1
             
             # 안전장치 (무한루프 방지)
             if page > 100:
-                print("페이지 수가 100을 초과했습니다. 종료합니다.")
+                log("페이지 수가 100을 초과했습니다. 종료합니다.")
                 break
         
         return all_sellers
@@ -119,7 +124,7 @@ class SellersCrawler(BaseCrawler):
         try:
             # 서비스 카드들 찾기
             service_cards = self.driver.find_elements(By.XPATH, "//*[@class='css-0 edqw2x10']")
-            print(f"현재 페이지에서 {len(service_cards)}개 서비스 발견")
+            log(f"현재 페이지에서 {len(service_cards)}개 서비스 발견")
             
             for i, card in enumerate(service_cards):
                 try:
@@ -136,11 +141,11 @@ class SellersCrawler(BaseCrawler):
                         })
                         
                 except Exception as e:
-                    print(f"서비스 {i+1}에서 판매자 이름 추출 실패: {e}")
+                    log(f"서비스 {i+1}에서 판매자 이름 추출 실패: {e}")
                     continue
         
         except Exception as e:
-            print(f"서비스 카드 찾기 실패: {e}")
+            log(f"서비스 카드 찾기 실패: {e}")
         
         return sellers
     
@@ -149,7 +154,7 @@ class SellersCrawler(BaseCrawler):
         all_data = []
         
         for category_id in category_ids:
-            print(f"\n=== 카테고리 {category_id} 시작 ===")
+            log(f"\n=== 카테고리 {category_id} 시작 ===")
             
             try:
                 sellers = self.crawl_category_sellers(category_id)
@@ -164,11 +169,11 @@ class SellersCrawler(BaseCrawler):
                 self.save_data(sellers, f'category_{category_id}_sellers')
                 
             except Exception as e:
-                print(f"카테고리 {category_id} 크롤링 실패: {e}")
+                log(f"카테고리 {category_id} 크롤링 실패: {e}")
                 continue
             
             # 카테고리 간 잠시 대기
-            time.sleep(5)
+            time.sleep(3)
         
         return all_data
 
@@ -181,11 +186,18 @@ class ProfileCrawler(BaseCrawler):
     def crawl_seller_profile(self, seller_name):
         """기존 메서드를 최적화된 버전으로 교체"""
         profile_url = f"https://kmong.com/@{seller_name}"
+<<<<<<< HEAD
         print(f"프로필 크롤링 시작: {seller_name}")
         
         try:
             self.driver.get(profile_url)
             time.sleep(3)  # 페이지 로딩만 대기
+=======
+        log(f"프로필 크롤링 시작: {seller_name} ({profile_url})")
+        
+        try:
+            self.driver.get(profile_url)
+>>>>>>> 02a1d67 (대기시간 축소)
             
             # BeautifulSoup으로 한 번에 파싱
             soup = self._extract_with_beautifulsoup()
@@ -201,12 +213,21 @@ class ProfileCrawler(BaseCrawler):
                 'skills': self._extract_skills_fast(soup)
             }
             
-            print(f"프로필 크롤링 완료: {seller_name}")
+            log(f"프로필 크롤링 완료: {seller_name}")
             return profile_data
             
         except Exception as e:
+<<<<<<< HEAD
             print(f"프로필 크롤링 실패 - {seller_name}: {e}")
             return {'seller_name': seller_name, 'profile_url': profile_url, 'error': str(e)}
+=======
+            log(f"프로필 크롤링 실패 - {seller_name}: {e}")
+            return {
+                'seller_name': seller_name,
+                'profile_url': profile_url,
+                'error': str(e)
+            }
+>>>>>>> 02a1d67 (대기시간 축소)
     
     def _extract_introduction_fast(self, soup):
         """빠른 자기소개 추출"""
@@ -214,9 +235,10 @@ class ProfileCrawler(BaseCrawler):
             intro_element = soup.find(class_='ProfileDescriptionSection__desctiption')
             return intro_element.text.strip() if intro_element else ""
         except Exception as e:
-            print(f"자기소개 추출 실패: {e}")
+            log(f"자기소개 추출 실패: {e}")
             return ""
     
+<<<<<<< HEAD
     # 새로 추가
     def _extract_section_data_fast(self, soup, section_title, tag_class):
         """빠른 섹션 데이터 추출"""
@@ -247,6 +269,17 @@ class ProfileCrawler(BaseCrawler):
     def _extract_skills_fast(self, soup):
         """빠른 보유 기술 추출"""
         return self._extract_section_data_fast(soup, "보유 기술", "ProfileSkillSection__tag")
+=======
+    def _extract_career(self):
+        """경력사항 추출"""
+        log("경력사항 추출")
+        return self._extract_section_data("경력사항", "ProfileSkillSection__tag")
+    
+    def _extract_skills(self):
+        """보유 기술 추출"""
+        log("보유 기술 추출")
+        return self._extract_section_data("보유 기술", "ProfileSkillSection__tag")
+>>>>>>> 02a1d67 (대기시간 축소)
 
     def _extract_section_data(self, section_title, tag_class):
         try:
@@ -254,7 +287,7 @@ class ProfileCrawler(BaseCrawler):
             
             for title in section_titles:
                 if section_title in title.text.strip():
-                    print(f"{section_title} 섹션 발견")
+                    log(f"{section_title} 섹션 발견")
                     
                     # XPath 패턴 분석:
                     # 제목: .../div[1]/div[1]  
@@ -272,11 +305,11 @@ class ProfileCrawler(BaseCrawler):
                         tags = content_div.find_elements(By.CLASS_NAME, tag_class)
                         
                         tag_texts = [tag.text.strip() for tag in tags if tag.text.strip()]
-                        print(f"{section_title} 추출 완료: {len(tag_texts)}개 - {tag_texts}")
+                        log(f"{section_title} 추출 완료: {len(tag_texts)}개 - {tag_texts}")
                         return tag_texts
                         
                     except Exception as e:
-                        print(f"{section_title} 태그 추출 실패: {e}")
+                        log(f"{section_title} 태그 추출 실패: {e}")
                         
                         # 대안: 더 넓은 범위에서 태그 찾기
                         try:
@@ -284,16 +317,16 @@ class ProfileCrawler(BaseCrawler):
                             next_sibling = title.find_element(By.XPATH, "./following-sibling::*")
                             tags = next_sibling.find_elements(By.CLASS_NAME, tag_class)
                             tag_texts = [tag.text.strip() for tag in tags if tag.text.strip()]
-                            print(f"{section_title} 대안 방법으로 추출: {tag_texts}")
+                            log(f"{section_title} 대안 방법으로 추출: {tag_texts}")
                             return tag_texts
                         except:
                             return []
             
-            print(f"{section_title} 섹션을 찾을 수 없습니다.")
+            log(f"{section_title} 섹션을 찾을 수 없습니다.")
             return []
             
         except Exception as e:
-            print(f"{section_title} 추출 실패: {e}")
+            log(f"{section_title} 추출 실패: {e}")
             return []
 
     # 기존 _extract_specialties를 이걸로 교체
@@ -302,14 +335,21 @@ class ProfileCrawler(BaseCrawler):
         try:
             specialty_sections = soup.find_all(class_="ProfileSkillSection__specialty")
             
+<<<<<<< HEAD
             for specialty in specialty_sections:
                 full_text = specialty.text.strip()
                 if "IT·프로그래밍" in full_text:
                     lines = [line.strip() for line in full_text.split('\n') if line.strip()]
+=======
+            for title in section_titles:
+                if "전문분야" in title.text:
+                    log("전문분야 섹션 발견")
+>>>>>>> 02a1d67 (대기시간 축소)
                     
                     it_found = False
                     tags = []
                     
+<<<<<<< HEAD
                     for line in lines:
                         if "IT·프로그래밍" in line:
                             it_found = True
@@ -325,10 +365,86 @@ class ProfileCrawler(BaseCrawler):
                         print(f"IT·프로그래밍 태그들: {tags}")
                         return tags
             
+=======
+                    # IT·프로그래밍 제목을 가진 div 찾기
+                    it_titles = section_container.find_elements(By.CLASS_NAME, "ProfileSkillSection__title")
+                    
+                    for it_title in it_titles:
+                        title_text = it_title.text.strip()
+                        log(f"전문분야 제목 발견: '{title_text}'")
+                        
+                        if "IT" in title_text and "프로그래밍" in title_text:
+                            log(f"IT·프로그래밍 전문분야 발견: {title_text}")
+                            
+                            try:
+                                # IT·프로그래밍 제목 다음에 오는 태그들 찾기
+                                # 방법 1: 다음 형제 요소들에서 태그 찾기
+                                next_elements = it_title.find_elements(By.XPATH, "./following-sibling::*")
+                                
+                                all_tags = []
+                                for element in next_elements:
+                                    # 다음 ProfileSkillSection__title이 나오면 중단
+                                    if "ProfileSkillSection__title" in element.get_attribute("class"):
+                                        break
+                                    
+                                    # 태그들 찾기
+                                    tags = element.find_elements(By.CLASS_NAME, "ProfileSkillSection__tag")
+                                    for tag in tags:
+                                        tag_text = tag.text.strip()
+                                        if tag_text:
+                                            all_tags.append(tag_text)
+                                
+                                if all_tags:
+                                    log(f"IT·프로그래밍 태그들: {all_tags}")
+                                    return all_tags
+                                
+                                # 방법 2: 부모 요소에서 태그들 찾기 (바로 다음)
+                                parent = it_title.find_element(By.XPATH, "./..")
+                                tags = parent.find_elements(By.CLASS_NAME, "ProfileSkillSection__tag")
+                                if tags:
+                                    tag_texts = [tag.text.strip() for tag in tags if tag.text.strip()]
+                                    log(f"부모에서 찾은 IT·프로그래밍 태그들: {tag_texts}")
+                                    return tag_texts
+                                    
+                            except Exception as e:
+                                log(f"IT 프로그래밍 태그 추출 실패: {e}")
+                    
+                    # 대안: 텍스트 파싱으로 추출
+                    log("대안 방법: 텍스트 파싱 시도")
+                    specialties = section_container.find_elements(By.CLASS_NAME, "ProfileSkillSection__specialty")
+                    
+                    for specialty in specialties:
+                        full_text = specialty.text.strip()
+                        if "IT·프로그래밍" in full_text:
+                            lines = full_text.split('\n')
+                            
+                            # IT·프로그래밍 이후의 줄들 추출
+                            it_found = False
+                            tags = []
+                            
+                            for line in lines:
+                                line = line.strip()
+                                if "IT·프로그래밍" in line:
+                                    it_found = True
+                                    continue
+                                
+                                if it_found:
+                                    # 다음 전문분야가 나오면 중단
+                                    if line and not line.startswith('·') and '·' in line and len(line) < 20:
+                                        break
+                                    if line:
+                                        tags.append(line)
+                            
+                            if tags:
+                                log(f"텍스트 파싱으로 추출한 IT·프로그래밍 태그들: {tags}")
+                                return tags
+            
+            log("IT·프로그래밍 전문분야를 찾을 수 없습니다.")
+>>>>>>> 02a1d67 (대기시간 축소)
             return []
             
         except Exception as e:
-            print(f"전문분야 추출 실패: {e}")
+            log(f"전문분야 추출 실패: {e}")
             return []
     
     def crawl_multiple_profiles(self, seller_names):
@@ -336,7 +452,7 @@ class ProfileCrawler(BaseCrawler):
         all_profiles = []
         
         for i, seller_name in enumerate(seller_names, 1):
-            print(f"\n=== 프로필 {i}/{len(seller_names)}: {seller_name} ===")
+            log(f"\n=== 프로필 {i}/{len(seller_names)}: {seller_name} ===")
             
             profile_data = self.crawl_seller_profile(seller_name)
             all_profiles.append(profile_data)
@@ -359,9 +475,15 @@ class ProfileCrawler(BaseCrawler):
             # limit 기본값을 None으로 설정하여 전체 처리
             if limit:
                 seller_names = seller_names[:limit]
+<<<<<<< HEAD
                 print(f"제한 모드: {limit}명만 크롤링합니다")
             else:
                 print(f"전체 모드: {len(seller_names)}명 크롤링합니다")
+=======
+                log(f"개발 모드: {limit}명만 크롤링합니다")
+            
+            log(f"CSV에서 {len(seller_names)}명의 판매자 크롤링 예정")
+>>>>>>> 02a1d67 (대기시간 축소)
             
             profiles = self.crawl_multiple_profiles(seller_names)
             
@@ -371,7 +493,7 @@ class ProfileCrawler(BaseCrawler):
             return profiles
             
         except Exception as e:
-            print(f"CSV 파일 읽기 실패: {e}")
+            log(f"CSV 파일 읽기 실패: {e}")
             return []
 
     def crawl_reviews(self, seller_name, max_pages=500):
@@ -387,9 +509,9 @@ class ProfileCrawler(BaseCrawler):
                 review_section = self.driver.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__list-group")
                 self.driver.execute_script("arguments[0].scrollIntoView({block: 'start'});", review_section)
                 time.sleep(2)
-                print("리뷰 섹션으로 스크롤 완료")
+                log("리뷰 섹션으로 스크롤 완료")
             except:
-                print("리뷰 섹션을 찾을 수 없음")
+                log("리뷰 섹션을 찾을 수 없음")
                 return []
             
             # 리뷰 크롤링 진행
@@ -398,16 +520,16 @@ class ProfileCrawler(BaseCrawler):
             
             while pages_crawled < max_pages:
                 current_page = pages_crawled + 1
-                print(f"리뷰 페이지 {current_page} 크롤링 중...")
+                log(f"리뷰 페이지 {current_page} 크롤링 중...")
                 
                 page_reviews = self._extract_reviews_from_page()
                 
                 if not page_reviews:
-                    print("더 이상 리뷰가 없습니다.")
+                    log("더 이상 리뷰가 없습니다.")
                     break
                     
                 all_reviews.extend(page_reviews)
-                print(f"페이지 {current_page}에서 {len(page_reviews)}개 리뷰 수집")
+                log(f"페이지 {current_page}에서 {len(page_reviews)}개 리뷰 수집")
                 pages_crawled += 1
                 
                 if pages_crawled < max_pages:
@@ -417,7 +539,7 @@ class ProfileCrawler(BaseCrawler):
             return all_reviews
             
         except Exception as e:
-            print(f"리뷰 크롤링 실패: {e}")
+            log(f"리뷰 크롤링 실패: {e}")
             return []
 
     def _extract_reviews_from_page(self):
@@ -429,8 +551,14 @@ class ProfileCrawler(BaseCrawler):
             if not soup:
                 return []
             
+<<<<<<< HEAD
             review_cards = soup.find_all(class_="RatingList")
             print(f"리뷰 {len(review_cards)}개 발견")
+=======
+            # 해당 섹션 내의 리뷰들만 추출
+            review_cards = review_section.find_elements(By.CLASS_NAME, "RatingList")
+            log(f"리뷰 섹션에서 {len(review_cards)}개 리뷰 발견")
+>>>>>>> 02a1d67 (대기시간 축소)
             
             for i, card in enumerate(review_cards):
                 try:
@@ -447,14 +575,19 @@ class ProfileCrawler(BaseCrawler):
                     }
                     
                     reviews.append(review_data)
+<<<<<<< HEAD
+=======
+                    log(f"  리뷰 {i+1}: {review_data['service_title'][:30]}...")
+>>>>>>> 02a1d67 (대기시간 축소)
                     
                 except Exception as e:
-                    print(f"개별 리뷰 {i+1} 추출 실패: {e}")
+                    log(f"개별 리뷰 {i+1} 추출 실패: {e}")
                     continue
             
             return reviews
             
         except Exception as e:
+<<<<<<< HEAD
             print(f"리뷰 추출 실패: {e}")
             # 기존 Selenium 방식으로 폴백
             return self._extract_reviews_from_page_selenium()
@@ -462,6 +595,16 @@ class ProfileCrawler(BaseCrawler):
     def _extract_service_info_fast(self, card_soup):
         """새로 추가"""
         service_info = {'title': '', 'period': '', 'amount': ''}
+=======
+            log(f"리뷰 섹션에서 리뷰 추출 실패: {e}")
+            # 대안: 전체 페이지에서 검색
+            try:
+                review_cards = self.driver.find_elements(By.CLASS_NAME, "RatingList")
+                log(f"전체 페이지에서 {len(review_cards)}개 리뷰 발견 (대안)")
+                # 위와 동일한 추출 로직 적용
+            except:
+                log("전체 페이지에서도 리뷰를 찾을 수 없음")
+>>>>>>> 02a1d67 (대기시간 축소)
         
         try:
             title_element = card_soup.find(class_="RatingList__buyer-selling-service-gig-info-title")
@@ -505,10 +648,10 @@ class ProfileCrawler(BaseCrawler):
                     period_span = service_title.find_element(By.XPATH, "./following-sibling::span")
                     service_info['period'] = period_span.text.strip()
                 except Exception as e:
-                    print(f"작업 기간 추출 실패: {e}")
+                    log(f"작업 기간 추출 실패: {e}")
                     
             except Exception as e:
-                print(f"서비스명 추출 실패: {e}")
+                log(f"서비스명 추출 실패: {e}")
             
             # 주문금액 (info_wrap 다음 div 안의 span)
             try:
@@ -516,10 +659,10 @@ class ProfileCrawler(BaseCrawler):
                 amount_span = amount_div.find_element(By.TAG_NAME, "span")
                 service_info['amount'] = amount_span.text.strip()
             except Exception as e:
-                print(f"주문금액 추출 실패: {e}")
+                log(f"주문금액 추출 실패: {e}")
                 
         except Exception as e:
-            print(f"서비스 정보 컨테이너 찾기 실패: {e}")
+            log(f"서비스 정보 컨테이너 찾기 실패: {e}")
         
         return service_info
 
@@ -540,8 +683,8 @@ class ProfileCrawler(BaseCrawler):
             if direct_links and len(direct_links) > 0:
                 # 직접 클릭 가능
                 direct_links[0].click()
-                time.sleep(2)
-                print(f"페이지 {target_page} 직접 이동 성공")
+                time.sleep(1)
+                log(f"페이지 {target_page} 직접 이동 성공")
                 return True
             
             # 2. 목표 페이지가 안 보이면 현재 상황 분석
@@ -549,9 +692,9 @@ class ProfileCrawler(BaseCrawler):
             try:
                 active_page = pagination.find_element(By.XPATH, ".//li[contains(@class, 'active')]/a")
                 current_active = int(active_page.text)
-                print(f"현재 활성 페이지: {current_active}, 목표: {target_page}")
+                log(f"현재 활성 페이지: {current_active}, 목표: {target_page}")
             except:
-                print("현재 활성 페이지를 찾을 수 없음")
+                log("현재 활성 페이지를 찾을 수 없음")
             
             # 3. ">" 버튼으로 앞으로 이동
             max_attempts = 10  # 무한루프 방지
@@ -563,7 +706,7 @@ class ProfileCrawler(BaseCrawler):
                 # ">" 버튼 찾기
                 next_buttons = pagination.find_elements(By.XPATH, ".//li/a[text()='>']")
                 if not next_buttons:
-                    print("'>' 버튼을 찾을 수 없음")
+                    log("'>' 버튼을 찾을 수 없음")
                     break
                 
                 next_button = next_buttons[0]
@@ -571,27 +714,27 @@ class ProfileCrawler(BaseCrawler):
                 
                 # disabled 체크
                 if "disabled" in parent_li.get_attribute("class"):
-                    print("'>' 버튼이 비활성화됨")
+                    log("'>' 버튼이 비활성화됨")
                     break
                 
                 # ">" 클릭
                 next_button.click()
-                time.sleep(3)
-                print(f"'>' 클릭 시도 {attempts}")
+                time.sleep(1)
+                log(f"'>' 클릭 시도 {attempts}")
                 
                 # 페이지네이션 다시 가져오기
                 try:
                     pagination = self.driver.find_element(By.CLASS_NAME, "pagination")
                 except:
-                    print("페이지네이션을 다시 찾을 수 없음")
+                    log("페이지네이션을 다시 찾을 수 없음")
                     break
                 
                 # 목표 페이지가 이제 보이는지 확인
                 target_links = pagination.find_elements(By.XPATH, f".//li[@class='page-item']/a[text()='{target_page}']")
                 if target_links:
                     target_links[0].click()
-                    time.sleep(2)
-                    print(f"페이지 {target_page} 이동 성공 (시도 {attempts}회)")
+                    time.sleep(1)
+                    log(f"페이지 {target_page} 이동 성공 (시도 {attempts}회)")
                     return True
                 
                 # 현재 페이지가 목표보다 크면 너무 멀리 간 것
@@ -599,16 +742,16 @@ class ProfileCrawler(BaseCrawler):
                     current_active = pagination.find_element(By.XPATH, ".//li[contains(@class, 'active')]/a")
                     current_num = int(current_active.text)
                     if current_num >= target_page:
-                        print(f"목표 페이지 {target_page}를 지나쳤음 (현재: {current_num})")
+                        log(f"목표 페이지 {target_page}를 지나쳤음 (현재: {current_num})")
                         break
                 except:
                     pass
             
-            print(f"페이지 {target_page} 이동 실패")
+            log(f"페이지 {target_page} 이동 실패")
             return False
             
         except Exception as e:
-            print(f"페이지 {target_page} 이동 중 오류: {e}")
+            log(f"페이지 {target_page} 이동 중 오류: {e}")
             return False
 
     def _go_to_next_review_page(self):
@@ -628,15 +771,15 @@ class ProfileCrawler(BaseCrawler):
             try:
                 active_page = pagination.find_element(By.XPATH, ".//li[contains(@class, 'active')]/a")
                 current_page_num = active_page.text
-                print(f"현재 리뷰 페이지: {current_page_num}")
+                log(f"현재 리뷰 페이지: {current_page_num}")
             except:
-                print("현재 페이지 번호 확인 불가")
+                log("현재 페이지 번호 확인 불가")
             
             # ">" 버튼 찾기
             next_buttons = pagination.find_elements(By.XPATH, ".//li/a[text()='>']")
             
             if not next_buttons:
-                print("리뷰 '>' 버튼을 찾을 수 없음")
+                log("리뷰 '>' 버튼을 찾을 수 없음")
                 return False
             
             next_button = next_buttons[0]
@@ -646,10 +789,10 @@ class ProfileCrawler(BaseCrawler):
             li_class = parent_li.get_attribute("class") or ""
             tabindex = next_button.get_attribute("tabindex") or "0"
             
-            print(f"버튼 상태 - class: '{li_class}', tabindex: '{tabindex}'")
+            log(f"버튼 상태 - class: '{li_class}', tabindex: '{tabindex}'")
             
             if "disabled" in li_class or tabindex == "-1":
-                print("리뷰 다음 페이지 버튼이 비활성화됨")
+                log("리뷰 다음 페이지 버튼이 비활성화됨")
                 return False
             
             # 클릭 전 잠시 대기
@@ -657,10 +800,10 @@ class ProfileCrawler(BaseCrawler):
             
             # JavaScript 클릭
             self.driver.execute_script("arguments[0].click();", next_button)
-            print("리뷰 다음 페이지 버튼 클릭")
+            log("리뷰 다음 페이지 버튼 클릭")
             
             # 페이지 변경 대기 - 더 긴 시간
-            time.sleep(2)
+            time.sleep(1)
             
             # 페이지 변경 확인
             try:
@@ -668,33 +811,33 @@ class ProfileCrawler(BaseCrawler):
                 new_pagination = new_section.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__pagination")
                 new_active = new_pagination.find_element(By.XPATH, ".//li[contains(@class, 'active')]/a")
                 new_page_num = new_active.text
-                print(f"새 리뷰 페이지: {new_page_num}")
+                log(f"새 리뷰 페이지: {new_page_num}")
                 
                 if new_page_num == current_page_num:
-                    print("경고: 페이지가 변경되지 않음")
+                    log("경고: 페이지가 변경되지 않음")
                     return False
                     
             except Exception as e:
-                print(f"페이지 변경 확인 실패: {e}")
+                log(f"페이지 변경 확인 실패: {e}")
             
             # 새 리뷰 데이터 로딩 대기
             try:
                 WebDriverWait(self.driver, 10).until(
                     lambda driver: len(driver.find_elements(By.CLASS_NAME, "RatingList")) > 0
                 )
-                print("새 리뷰 데이터 로딩 확인")
+                log("새 리뷰 데이터 로딩 확인")
             except:
-                print("새 리뷰 데이터 로딩 대기 시간 초과")
+                log("새 리뷰 데이터 로딩 대기 시간 초과")
             
             return True
             
         except Exception as e:
-            print(f"리뷰 다음 페이지 이동 실패: {e}")
+            log(f"리뷰 다음 페이지 이동 실패: {e}")
             return False
 
     def crawl_seller_profile_with_reviews(self, seller_name, max_review_pages=3):
         """프로필 + 리뷰 통합 크롤링"""
-        print(f"\n=== {seller_name} 프로필 + 리뷰 크롤링 시작 ===")
+        log(f"\n=== {seller_name} 프로필 + 리뷰 크롤링 시작 ===")
         
         # 기본 프로필 정보 크롤링
         profile_data = self.crawl_seller_profile(seller_name)
@@ -704,9 +847,9 @@ class ProfileCrawler(BaseCrawler):
             reviews = self.crawl_reviews(seller_name, max_pages=max_review_pages)
             profile_data['reviews'] = reviews
             profile_data['total_reviews'] = len(reviews)
-            print(f"리뷰 크롤링 완료: {len(reviews)}개")
+            log(f"리뷰 크롤링 완료: {len(reviews)}개")
         except Exception as e:
-            print(f"리뷰 크롤링 실패: {e}")
+            log(f"리뷰 크롤링 실패: {e}")
             profile_data['reviews'] = []
             profile_data['total_reviews'] = 0
         
@@ -717,7 +860,7 @@ class ProfileCrawler(BaseCrawler):
         all_profiles = []
         
         for i, seller_name in enumerate(seller_names, 1):
-            print(f"\n=== 프로필 {i}/{len(seller_names)}: {seller_name} ===")
+            log(f"\n=== 프로필 {i}/{len(seller_names)}: {seller_name} ===")
             
             profile_data = self.crawl_seller_profile_with_reviews(seller_name, max_review_pages)
             all_profiles.append(profile_data)
@@ -727,7 +870,7 @@ class ProfileCrawler(BaseCrawler):
                 self.save_data(all_profiles[-10:], f'profiles_with_reviews_batch_{i//10}')
             
             # 요청 간격 조절 (리뷰까지 크롤링하면 시간이 더 걸림)
-            time.sleep(3)
+            time.sleep(1)
         
         return all_profiles
 
@@ -751,7 +894,7 @@ class ProfileCrawler(BaseCrawler):
             next_buttons = pagination.find_elements(By.XPATH, ".//li/a[text()='>']")
             
             if not next_buttons:
-                print("서비스 '>' 버튼을 찾을 수 없음")
+                log("서비스 '>' 버튼을 찾을 수 없음")
                 return False
             
             next_button = next_buttons[0]
@@ -762,29 +905,29 @@ class ProfileCrawler(BaseCrawler):
             tabindex = next_button.get_attribute("tabindex") or "0"
             
             if "disabled" in li_class or tabindex == "-1":
-                print("서비스 다음 페이지 버튼이 비활성화됨")
+                log("서비스 다음 페이지 버튼이 비활성화됨")
                 return False
             
             # JavaScript 클릭
             self.driver.execute_script("arguments[0].click();", next_button)
-            print("서비스 다음 페이지 버튼 클릭")
+            log("서비스 다음 페이지 버튼 클릭")
             
             # 페이지 변경 대기
-            time.sleep(3)
+            time.sleep(1)
             
             # 새 서비스 데이터 로딩 확인
             try:
                 WebDriverWait(self.driver, 10).until(
                     lambda driver: len(driver.find_elements(By.XPATH, "//a[contains(@href, '/gig/')]")) > 0
                 )
-                print("새 서비스 페이지 로딩 완료")
+                log("새 서비스 페이지 로딩 완료")
                 return True
             except:
-                print("새 서비스 페이지 로딩 확인 실패")
+                log("새 서비스 페이지 로딩 확인 실패")
                 return False
                 
         except Exception as e:
-            print(f"서비스 다음 페이지 이동 실패: {e}")
+            log(f"서비스 다음 페이지 이동 실패: {e}")
             return False
             
     def crawl_services(self, seller_name, max_service_pages=3, max_services=None):
@@ -793,19 +936,19 @@ class ProfileCrawler(BaseCrawler):
         
         try:
             self.driver.get(profile_url)
-            time.sleep(3)
+            time.sleep(1)
             
             # 서비스 탭 클릭
             service_tab_activated = self._activate_service_tab()
             if not service_tab_activated:
-                print("서비스 탭 활성화 실패")
+                log("서비스 탭 활성화 실패")
                 return []
             
             # 서비스 목록 URLs 수집 (페이지네이션 포함)
             service_urls = self._get_service_list(max_pages=max_service_pages)
             
             if not service_urls:
-                print("서비스 URL을 찾을 수 없음")
+                log("서비스 URL을 찾을 수 없음")
                 return []
             
             # 제한된 수의 서비스만 처리 (너무 많으면 시간 오래 걸림)
@@ -815,7 +958,7 @@ class ProfileCrawler(BaseCrawler):
             # 각 서비스 상세 정보 수집
             all_services = []
             for i, service_url in enumerate(service_urls, 1):
-                print(f"서비스 {i}/{len(service_urls)} 처리: {service_url}")
+                log(f"서비스 {i}/{len(service_urls)} 처리: {service_url}")
                 
                 service_data = self.crawl_single_service(service_url)
                 if service_data:
@@ -826,7 +969,7 @@ class ProfileCrawler(BaseCrawler):
             return all_services
             
         except Exception as e:
-            print(f"서비스 크롤링 실패: {e}")
+            log(f"서비스 크롤링 실패: {e}")
             return []
 
     def _activate_service_tab(self):
@@ -843,20 +986,20 @@ class ProfileCrawler(BaseCrawler):
                     EC.element_to_be_clickable((By.XPATH, selector))
                 )
                 self.driver.execute_script("arguments[0].click();", tab)
-                time.sleep(3)
+                time.sleep(1)
                 
                 # 서비스 목록이 로딩되었는지 확인
                 WebDriverWait(self.driver, 10).until(
                     lambda driver: len(driver.find_elements(By.XPATH, "//a[contains(@href, '/gig/')]")) > 0
                 )
                 
-                print("서비스 탭 활성화 성공")
+                log("서비스 탭 활성화 성공")
                 return True
                 
             except:
                 continue
         
-        print("서비스 탭 활성화 실패")
+        log("서비스 탭 활성화 실패")
         return False
 
     def _get_service_list(self, max_pages=100):
@@ -868,27 +1011,27 @@ class ProfileCrawler(BaseCrawler):
             # 서비스 섹션으로 스크롤
             service_section = self.driver.find_element(By.CLASS_NAME, "ProfileServiceListSection")
             self.driver.execute_script("arguments[0].scrollIntoView({block: 'start'});", service_section)
-            time.sleep(2)
-            print("서비스 섹션으로 스크롤 완료")
+            time.sleep(1)
+            log("서비스 섹션으로 스크롤 완료")
         except:
-            print("서비스 섹션을 찾을 수 없음")
+            log("서비스 섹션을 찾을 수 없음")
         
         while current_page <= max_pages:
-            print(f"서비스 목록 페이지 {current_page} 수집 중...")
+            log(f"서비스 목록 페이지 {current_page} 수집 중...")
             
             try:
                 # 현재 페이지의 서비스 URLs 수집
                 page_urls = self._extract_service_urls_from_page()
                 
                 if not page_urls:
-                    print("더 이상 서비스가 없습니다.")
+                    log("더 이상 서비스가 없습니다.")
                     break
                 
                 # 중복 제거하면서 추가
                 new_urls = [url for url in page_urls if url not in all_service_urls]
                 all_service_urls.extend(new_urls)
                 
-                print(f"페이지 {current_page}에서 {len(new_urls)}개 새 서비스 발견")
+                log(f"페이지 {current_page}에서 {len(new_urls)}개 새 서비스 발견")
                 
                 # 다음 페이지로 이동
                 if current_page < max_pages:
@@ -898,10 +1041,10 @@ class ProfileCrawler(BaseCrawler):
                 current_page += 1
                 
             except Exception as e:
-                print(f"서비스 페이지 {current_page} 수집 실패: {e}")
+                log(f"서비스 페이지 {current_page} 수집 실패: {e}")
                 break
         
-        print(f"총 {len(all_service_urls)}개 서비스 URL 수집 완료")
+        log(f"총 {len(all_service_urls)}개 서비스 URL 수집 완료")
         return all_service_urls
 
     def _extract_service_urls_from_page(self):
@@ -928,7 +1071,7 @@ class ProfileCrawler(BaseCrawler):
             return service_urls
             
         except Exception as e:
-            print(f"서비스 URL 추출 실패: {e}")
+            log(f"서비스 URL 추출 실패: {e}")
             return []
             
     def _extract_package_info(self):
@@ -944,15 +1087,15 @@ class ProfileCrawler(BaseCrawler):
             
             if not package_buttons:
                 # 단일 패키지 처리
-                print("단일 패키지 감지")
+                log("단일 패키지 감지")
                 return self._extract_single_package_info(aside)
             else:
                 # 다중 패키지 처리
-                print(f"{len(package_buttons)}개 패키지 감지")
+                log(f"{len(package_buttons)}개 패키지 감지")
                 return self._extract_multiple_packages_info(aside, package_buttons)
                 
         except Exception as e:
-            print(f"패키지 정보 추출 실패: {e}")
+            log(f"패키지 정보 추출 실패: {e}")
             return {}
 
     def _extract_single_package_info(self, aside):
@@ -989,7 +1132,7 @@ class ProfileCrawler(BaseCrawler):
             }
             
         except Exception as e:
-            print(f"단일 패키지 추출 실패: {e}")
+            log(f"단일 패키지 추출 실패: {e}")
             return {}
 
     def _extract_multiple_packages_info(self, aside, package_buttons):
@@ -1008,17 +1151,17 @@ class ProfileCrawler(BaseCrawler):
                 
                 # 버튼 클릭하여 해당 패키지 활성화
                 self.driver.execute_script("arguments[0].click();", button)
-                time.sleep(2)
+                time.sleep(1)
                 
                 # 현재 활성화된 패키지 정보 추출
                 package_info = self._extract_active_package_info(aside)
                 
                 if package_info:
                     packages[package_name] = package_info
-                    print(f"{package_name} 패키지 정보 추출 완료")
+                    log(f"{package_name} 패키지 정보 추출 완료")
                 
             except Exception as e:
-                print(f"{package_name} 패키지 추출 실패: {e}")
+                log(f"{package_name} 패키지 추출 실패: {e}")
                 continue
         
         return packages
@@ -1060,7 +1203,7 @@ class ProfileCrawler(BaseCrawler):
             }
             
         except Exception as e:
-            print(f"활성 패키지 정보 추출 실패: {e}")
+            log(f"활성 패키지 정보 추출 실패: {e}")
             return None
 
     def _extract_package_details(self, container):
@@ -1093,7 +1236,7 @@ class ProfileCrawler(BaseCrawler):
                         # 체크마크 SVG 있는지 확인
                         svg_check = item.find_element(By.XPATH, ".//svg")
                         details['included_features'].append(left_text)
-                        print(f"포함 기능: {left_text}")
+                        log(f"포함 기능: {left_text}")
                         
                     except:
                         # SVG가 없으면 값이 있는 항목
@@ -1103,20 +1246,20 @@ class ProfileCrawler(BaseCrawler):
                             )[1].text.strip()  # 두 번째 p 태그
                             
                             details['specifications'][left_text] = right_text
-                            print(f"상세 정보: {left_text} = {right_text}")
+                            log(f"상세 정보: {left_text} = {right_text}")
                             
                         except:
                             # 값을 찾을 수 없는 경우 포함 기능으로 분류
                             details['included_features'].append(left_text)
                             
                 except Exception as e:
-                    print(f"개별 항목 추출 실패: {e}")
+                    log(f"개별 항목 추출 실패: {e}")
                     continue
             
             return details
             
         except Exception as e:
-            print(f"패키지 상세 정보 추출 실패: {e}")
+            log(f"패키지 상세 정보 추출 실패: {e}")
             return details
 
     def _extract_package_prices(self):
@@ -1136,7 +1279,7 @@ class ProfileCrawler(BaseCrawler):
         """개별 서비스 페이지 크롤링 - 패키지 상세 정보 포함"""
         try:
             self.driver.get(service_url)
-            time.sleep(3)
+            time.sleep(1)
             
             service_data = {
                 'service_url': service_url,
@@ -1148,7 +1291,7 @@ class ProfileCrawler(BaseCrawler):
             return service_data
             
         except Exception as e:
-            print(f"서비스 페이지 크롤링 실패: {e}")
+            log(f"서비스 페이지 크롤링 실패: {e}")
             return None
 
     def _extract_skill_level(self):
@@ -1165,7 +1308,7 @@ class ProfileCrawler(BaseCrawler):
                     # 제목 바로 밑의 값 찾기
                     value_span = title.find_element(By.XPATH, "./following-sibling::div/div/div/span")
                     skill_level = value_span.text.strip()
-                    print(f"기술 수준: {skill_level}")
+                    log(f"기술 수준: {skill_level}")
                     return skill_level
                 except:
                     # 다른 구조 시도
@@ -1173,16 +1316,16 @@ class ProfileCrawler(BaseCrawler):
                         parent = title.find_element(By.XPATH, "./..")
                         value_span = parent.find_element(By.XPATH, ".//span")
                         skill_level = value_span.text.strip()
-                        print(f"기술 수준: {skill_level}")
+                        log(f"기술 수준: {skill_level}")
                         return skill_level
                     except:
                         continue
             
-            print("기술 수준을 찾을 수 없음")
+            log("기술 수준을 찾을 수 없음")
             return ""
             
         except Exception as e:
-            print(f"기술 수준 추출 실패: {e}")
+            log(f"기술 수준 추출 실패: {e}")
             return ""
 
     def _extract_team_size(self):
@@ -1199,7 +1342,7 @@ class ProfileCrawler(BaseCrawler):
                     # 제목 바로 밑의 값 찾기
                     value_span = title.find_element(By.XPATH, "./following-sibling::div/div/div/span")
                     team_size = value_span.text.strip()
-                    print(f"팀 규모: {team_size}")
+                    log(f"팀 규모: {team_size}")
                     return team_size
                 except:
                     # 다른 구조 시도
@@ -1207,21 +1350,21 @@ class ProfileCrawler(BaseCrawler):
                         parent = title.find_element(By.XPATH, "./..")
                         value_span = parent.find_element(By.XPATH, ".//span")
                         team_size = value_span.text.strip()
-                        print(f"팀 규모: {team_size}")
+                        log(f"팀 규모: {team_size}")
                         return team_size
                     except:
                         continue
             
-            print("팀 규모를 찾을 수 없음")
+            log("팀 규모를 찾을 수 없음")
             return ""
             
         except Exception as e:
-            print(f"팀 규모 추출 실패: {e}")
+            log(f"팀 규모 추출 실패: {e}")
             return ""
 
     def crawl_seller_profile_complete(self, seller_name, max_review_pages=2):
         """프로필 + 리뷰 + 서비스 통합 크롤링"""
-        print(f"\n=== {seller_name} 전체 데이터 크롤링 시작 ===")
+        log(f"\n=== {seller_name} 전체 데이터 크롤링 시작 ===")
         
         # 1. 기본 프로필 정보
         profile_data = self.crawl_seller_profile(seller_name)
@@ -1231,9 +1374,9 @@ class ProfileCrawler(BaseCrawler):
             reviews = self.crawl_reviews(seller_name, max_pages=max_review_pages)
             profile_data['reviews'] = reviews
             profile_data['total_reviews'] = len(reviews)
-            print(f"리뷰 크롤링 완료: {len(reviews)}개")
+            log(f"리뷰 크롤링 완료: {len(reviews)}개")
         except Exception as e:
-            print(f"리뷰 크롤링 실패: {e}")
+            log(f"리뷰 크롤링 실패: {e}")
             profile_data['reviews'] = []
             profile_data['total_reviews'] = 0
         
@@ -1242,9 +1385,9 @@ class ProfileCrawler(BaseCrawler):
             services = self.crawl_services(seller_name)
             profile_data['services'] = services
             profile_data['total_services'] = len(services)
-            print(f"서비스 크롤링 완료: {len(services)}개")
+            log(f"서비스 크롤링 완료: {len(services)}개")
         except Exception as e:
-            print(f"서비스 크롤링 실패: {e}")
+            log(f"서비스 크롤링 실패: {e}")
             profile_data['services'] = []
             profile_data['total_services'] = 0
         

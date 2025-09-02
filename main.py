@@ -3,36 +3,39 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from src.crawler.crawler import SellersCrawler, ProfileCrawler
 
+def log(message):
+    print(f"[{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] {message}")
+
 def main():
     choice = input("1. 카테고리 크롤링, 2. 프로필 크롤링, 3. 리뷰 크롤링, 4. 서비스 크롤링, 5. 전부다 : ")
     
     if choice in ['1', '5']:
         # 카테고리 크롤링
-        print("=== 카테고리 크롤링 시작 ===")
+        log("=== 카테고리 크롤링 시작 ===")
         sellers_crawler = SellersCrawler()
         category_ids = [661, 663, 645, 605]
         
         try:
             all_sellers = sellers_crawler.crawl_multiple_categories(category_ids)
             sellers_crawler.save_data(all_sellers, 'all_sellers')
-            print(f"카테고리 크롤링 완료: {len(all_sellers)}명")
+            log(f"카테고리 크롤링 완료: {len(all_sellers)}명")
         finally:
             sellers_crawler.close()
     
     if choice in ['2', '5']:
         # 프로필 크롤링 (limit 제거)
-        print("\n=== 프로필 크롤링 시작 ===")
+        log("=== 프로필 크롤링 시작 ===")
         profile_crawler = ProfileCrawler()
         
         try:
             profiles = profile_crawler.crawl_from_csv('output/all_sellers.csv')  # limit 제거
-            print(f"프로필 크롤링 완료: {len(profiles)}명")
+            log(f"프로필 크롤링 완료: {len(profiles)}명")
         finally:
             profile_crawler.close()
 
     if choice in ['3', '5']:
         # 리뷰 크롤링 (CSV에서 모든 판매자 처리)
-        print("\n=== 리뷰 크롤링 시작 ===")
+        log("=== 리뷰 크롤링 시작 ===")
         profile_crawler = ProfileCrawler()
 
         try:
@@ -46,7 +49,7 @@ def main():
                 max_review_pages=10  # 리뷰 제한 없이 (큰 숫자)
             )
             profile_crawler.save_data(profiles, 'profiles_with_reviews')
-            print(f"프로필+리뷰 크롤링 완료: {len(profiles)}명")
+            log(f"프로필+리뷰 크롤링 완료: {len(profiles)}명")
         finally:
             profile_crawler.close()
 
@@ -74,7 +77,7 @@ def main():
                     profile_crawler.save_data(all_data[-50:], f'complete_profiles_batch_{i//50}')
             
             profile_crawler.save_data(all_data, 'complete_profiles')
-            print(f"전체 크롤링 완료: {len(all_data)}명")
+            log(f"전체 크롤링 완료: {len(all_data)}명")
         finally:
             profile_crawler.close()
 
