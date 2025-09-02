@@ -54,7 +54,7 @@ def main():
             for seller in seller_names:
                 complete_data = profile_crawler.crawl_seller_profile_complete(
                     seller, 
-                    max_review_pages=2
+                    max_review_pages=5
                 )
                 all_data.append(complete_data)
             

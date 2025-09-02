@@ -734,31 +734,87 @@ class ProfileCrawler(BaseCrawler):
         
         return all_profiles
 
-    def crawl_services(self, seller_name):
-        """판매자의 서비스 정보 크롤링"""
+    def _go_to_next_service_page(self):
+        """서비스 다음 페이지로 이동 - 리뷰 로직 기반"""
+        try:
+            # 서비스 섹션에서 페이지네이션 찾기
+            service_section = self.driver.find_element(By.CLASS_NAME, "ProfileServiceListSection")
+            pagination = service_section.find_element(By.CLASS_NAME, "ProfileServiceListSection__pagination")
+            
+            # ">" 버튼 찾기
+            next_buttons = pagination.find_elements(By.XPATH, ".//li/a[text()='>']")
+            
+            if not next_buttons:
+                print("서비스 '>' 버튼을 찾을 수 없음")
+                return False
+            
+            next_button = next_buttons[0]
+            parent_li = next_button.find_element(By.XPATH, "./..")
+            
+            # disabled 상태 확인
+            li_class = parent_li.get_attribute("class") or ""
+            tabindex = next_button.get_attribute("tabindex") or "0"
+            
+            if "disabled" in li_class or tabindex == "-1":
+                print("서비스 다음 페이지 버튼이 비활성화됨")
+                return False
+            
+            # JavaScript 클릭
+            self.driver.execute_script("arguments[0].click();", next_button)
+            print("서비스 다음 페이지 버튼 클릭")
+            
+            # 페이지 변경 대기
+            time.sleep(3)
+            
+            # 새 서비스 데이터 로딩 확인
+            try:
+                WebDriverWait(self.driver, 10).until(
+                    lambda driver: len(driver.find_elements(By.XPATH, "//a[contains(@href, '/gig/')]")) > 0
+                )
+                print("새 서비스 페이지 로딩 완료")
+                return True
+            except:
+                print("새 서비스 페이지 로딩 확인 실패")
+                return False
+                
+        except Exception as e:
+            print(f"서비스 다음 페이지 이동 실패: {e}")
+            return False
+            
+    def crawl_services(self, seller_name, max_service_pages=3, max_services=10):
+        """판매자의 서비스 정보 크롤링 - 페이지네이션 포함"""
         profile_url = f"https://kmong.com/@{seller_name}"
         
         try:
             self.driver.get(profile_url)
             time.sleep(3)
             
-            # 서비스 탭 클릭 (필요한 경우)
-            try:
-                service_tab = self.driver.find_element(By.XPATH, "//button[contains(text(), '서비스') or contains(text(), '포트폴리오')]")
-                service_tab.click()
-                time.sleep(2)
-            except:
-                print("서비스 탭을 찾을 수 없음 (이미 표시되어 있을 수 있음)")
+            # 서비스 탭 클릭
+            service_tab_activated = self._activate_service_tab()
+            if not service_tab_activated:
+                print("서비스 탭 활성화 실패")
+                return []
             
-            # 서비스 목록 크롤링
+            # 서비스 목록 URLs 수집 (페이지네이션 포함)
+            service_urls = self._get_service_list(max_pages=max_service_pages)
+            
+            if not service_urls:
+                print("서비스 URL을 찾을 수 없음")
+                return []
+            
+            # 제한된 수의 서비스만 처리 (너무 많으면 시간 오래 걸림)
+            if max_services:
+                service_urls = service_urls[:max_services]
+            
+            # 각 서비스 상세 정보 수집
             all_services = []
-            services = self._get_service_list()
-            
-            for i, service_url in enumerate(services):
-                print(f"서비스 {i+1}/{len(services)} 크롤링: {service_url}")
+            for i, service_url in enumerate(service_urls, 1):
+                print(f"서비스 {i}/{len(service_urls)} 처리: {service_url}")
+                
                 service_data = self.crawl_single_service(service_url)
                 if service_data:
                     all_services.append(service_data)
+                
                 time.sleep(2)  # 서비스 간 대기
             
             return all_services
@@ -767,33 +823,318 @@ class ProfileCrawler(BaseCrawler):
             print(f"서비스 크롤링 실패: {e}")
             return []
 
-    def _get_service_list(self):
-        """서비스 목록 URL들 수집"""
+    def _activate_service_tab(self):
+        """서비스 탭 활성화"""
+        service_tab_selectors = [
+            "//button[contains(text(), '서비스') or contains(text(), 'Services')]",
+            "//a[contains(text(), '포트폴리오') or contains(text(), 'Portfolio')]",
+            "//*[@role='tab'][contains(text(), '서비스')]"
+        ]
+        
+        for selector in service_tab_selectors:
+            try:
+                tab = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, selector))
+                )
+                self.driver.execute_script("arguments[0].click();", tab)
+                time.sleep(3)
+                
+                # 서비스 목록이 로딩되었는지 확인
+                WebDriverWait(self.driver, 10).until(
+                    lambda driver: len(driver.find_elements(By.XPATH, "//a[contains(@href, '/gig/')]")) > 0
+                )
+                
+                print("서비스 탭 활성화 성공")
+                return True
+                
+            except:
+                continue
+        
+        print("서비스 탭 활성화 실패")
+        return False
+
+    def _get_service_list(self, max_pages=5):
+        """서비스 목록 URLs 수집 - 페이지네이션 포함"""
+        all_service_urls = []
+        current_page = 1
+        
+        try:
+            # 서비스 섹션으로 스크롤
+            service_section = self.driver.find_element(By.CLASS_NAME, "ProfileServiceListSection")
+            self.driver.execute_script("arguments[0].scrollIntoView({block: 'start'});", service_section)
+            time.sleep(2)
+            print("서비스 섹션으로 스크롤 완료")
+        except:
+            print("서비스 섹션을 찾을 수 없음")
+        
+        while current_page <= max_pages:
+            print(f"서비스 목록 페이지 {current_page} 수집 중...")
+            
+            try:
+                # 현재 페이지의 서비스 URLs 수집
+                page_urls = self._extract_service_urls_from_page()
+                
+                if not page_urls:
+                    print("더 이상 서비스가 없습니다.")
+                    break
+                
+                # 중복 제거하면서 추가
+                new_urls = [url for url in page_urls if url not in all_service_urls]
+                all_service_urls.extend(new_urls)
+                
+                print(f"페이지 {current_page}에서 {len(new_urls)}개 새 서비스 발견")
+                
+                # 다음 페이지로 이동
+                if current_page < max_pages:
+                    if not self._go_to_next_service_page():
+                        break
+                
+                current_page += 1
+                
+            except Exception as e:
+                print(f"서비스 페이지 {current_page} 수집 실패: {e}")
+                break
+        
+        print(f"총 {len(all_service_urls)}개 서비스 URL 수집 완료")
+        return all_service_urls
+
+    def _extract_service_urls_from_page(self):
+        """현재 페이지에서 서비스 URLs 추출"""
         service_urls = []
+        
         try:
             # 서비스 카드들에서 URL 추출
             service_cards = self.driver.find_elements(By.XPATH, "//a[contains(@href, '/gig/')]")
+            
             for card in service_cards:
                 url = card.get_attribute('href')
                 if url and url not in service_urls:
                     service_urls.append(url)
             
-            print(f"{len(service_urls)}개 서비스 URL 발견")
-            return service_urls[:5]  # 테스트용으로 5개만
+            # 대안: 다른 선택자 시도
+            if not service_urls:
+                service_links = self.driver.find_elements(By.XPATH, "//div[@class='css-0 edqw2x10']//a")
+                for link in service_links:
+                    href = link.get_attribute('href')
+                    if href and '/gig/' in href:
+                        service_urls.append(href)
+            
+            return service_urls
             
         except Exception as e:
-            print(f"서비스 목록 수집 실패: {e}")
+            print(f"서비스 URL 추출 실패: {e}")
             return []
+            
+    def _extract_package_info(self):
+        """패키지별 상세 정보 추출 - 완전 개선된 버전"""
+        try:
+            # aside 요소 찾기 (페이지에 하나만 있음)
+            aside = self.driver.find_element(By.TAG_NAME, "aside")
+            
+            # 패키지 버튼들 확인
+            package_buttons = aside.find_elements(
+                By.XPATH, ".//button[contains(@class, 'flex h-[50px] w-[119px]')]"
+            )
+            
+            if not package_buttons:
+                # 단일 패키지 처리
+                print("단일 패키지 감지")
+                return self._extract_single_package_info(aside)
+            else:
+                # 다중 패키지 처리
+                print(f"{len(package_buttons)}개 패키지 감지")
+                return self._extract_multiple_packages_info(aside, package_buttons)
+                
+        except Exception as e:
+            print(f"패키지 정보 추출 실패: {e}")
+            return {}
 
+    def _extract_single_package_info(self, aside):
+        """단일 패키지 정보 추출"""
+        try:
+            # 가격 추출
+            price_element = aside.find_element(
+                By.XPATH, ".//div[contains(@class, 'text-[18px] font-bold leading-[27px]')]"
+            )
+            price = price_element.text.strip()
+            
+            # 패키지 제목 추출
+            title_element = aside.find_element(
+                By.XPATH, ".//p[contains(@class, 'text-[14px] font-bold text-gray-800')]"
+            )
+            title = title_element.text.strip()
+            
+            # 패키지 설명 추출
+            description_element = aside.find_element(
+                By.XPATH, ".//p[contains(@class, 'whitespace-pre-wrap text-sm leading-[21px]')]"
+            )
+            description = description_element.text.strip()
+            
+            # 상세 정보 추출
+            details = self._extract_package_details(aside)
+            
+            return {
+                'SINGLE': {
+                    'price': price,
+                    'title': title,
+                    'description': description,
+                    'details': details
+                }
+            }
+            
+        except Exception as e:
+            print(f"단일 패키지 추출 실패: {e}")
+            return {}
+
+    def _extract_multiple_packages_info(self, aside, package_buttons):
+        """다중 패키지 정보 추출"""
+        packages = {}
+        package_types = ['STANDARD', 'DELUXE', 'PREMIUM']
+        
+        # 모든 패키지 콘텐츠 div들 찾기
+        content_divs = aside.find_elements(
+            By.XPATH, ".//div[contains(@class, 'w-full rounded-b-lg border border-gray-300')]"
+        )
+        
+        for i, (button, content_div) in enumerate(zip(package_buttons, content_divs)):
+            try:
+                package_name = package_types[i] if i < len(package_types) else f'PACKAGE_{i+1}'
+                
+                # 버튼 클릭하여 해당 패키지 활성화
+                self.driver.execute_script("arguments[0].click();", button)
+                time.sleep(2)
+                
+                # 현재 활성화된 패키지 정보 추출
+                package_info = self._extract_active_package_info(aside)
+                
+                if package_info:
+                    packages[package_name] = package_info
+                    print(f"{package_name} 패키지 정보 추출 완료")
+                
+            except Exception as e:
+                print(f"{package_name} 패키지 추출 실패: {e}")
+                continue
+        
+        return packages
+
+    def _extract_active_package_info(self, aside):
+        """현재 활성화된 패키지의 정보 추출"""
+        try:
+            # 현재 표시된 (block 상태) 콘텐츠 div 찾기
+            active_content = aside.find_element(
+                By.XPATH, ".//div[contains(@class, 'w-full rounded-b-lg border border-gray-300') and contains(@class, 'block')]"
+            )
+            
+            # 가격 추출
+            price_element = active_content.find_element(
+                By.XPATH, ".//div[contains(@class, 'text-[18px] font-bold leading-[27px]')]"
+            )
+            price = price_element.text.strip()
+            
+            # 패키지 제목 추출
+            title_element = active_content.find_element(
+                By.XPATH, ".//p[contains(@class, 'text-[14px] font-bold text-gray-800')]"
+            )
+            title = title_element.text.strip()
+            
+            # 패키지 설명 추출
+            description_element = active_content.find_element(
+                By.XPATH, ".//p[contains(@class, 'whitespace-pre-wrap text-sm leading-[21px]')]"
+            )
+            description = description_element.text.strip()
+            
+            # 상세 정보 추출
+            details = self._extract_package_details(active_content)
+            
+            return {
+                'price': price,
+                'title': title,
+                'description': description,
+                'details': details
+            }
+            
+        except Exception as e:
+            print(f"활성 패키지 정보 추출 실패: {e}")
+            return None
+
+    def _extract_package_details(self, container):
+        """패키지 상세 정보 추출 (체크박스 항목들 + 키-값 쌍들)"""
+        details = {
+            'included_features': [],  # 체크 표시된 항목들
+            'specifications': {}      # 키-값 쌍 항목들
+        }
+        
+        try:
+            # 그리드 컨테이너 찾기
+            grid_container = container.find_element(
+                By.XPATH, ".//div[contains(@class, 'mt-4 grid grid-cols-1 gap-x-4')]"
+            )
+            
+            # 모든 flex 아이템들 찾기
+            flex_items = grid_container.find_elements(
+                By.XPATH, ".//div[contains(@class, 'flex basis-1/2 items-center justify-between py-0.5')]"
+            )
+            
+            for item in flex_items:
+                try:
+                    # 왼쪽 텍스트 (항목명)
+                    left_text = item.find_element(
+                        By.XPATH, ".//p[contains(@class, 'text-sm')]"
+                    ).text.strip()
+                    
+                    # 오른쪽 요소 확인 (SVG 체크마크 또는 값)
+                    try:
+                        # 체크마크 SVG 있는지 확인
+                        svg_check = item.find_element(By.XPATH, ".//svg")
+                        details['included_features'].append(left_text)
+                        print(f"포함 기능: {left_text}")
+                        
+                    except:
+                        # SVG가 없으면 값이 있는 항목
+                        try:
+                            right_text = item.find_elements(
+                                By.XPATH, ".//p[contains(@class, 'text-sm')]"
+                            )[1].text.strip()  # 두 번째 p 태그
+                            
+                            details['specifications'][left_text] = right_text
+                            print(f"상세 정보: {left_text} = {right_text}")
+                            
+                        except:
+                            # 값을 찾을 수 없는 경우 포함 기능으로 분류
+                            details['included_features'].append(left_text)
+                            
+                except Exception as e:
+                    print(f"개별 항목 추출 실패: {e}")
+                    continue
+            
+            return details
+            
+        except Exception as e:
+            print(f"패키지 상세 정보 추출 실패: {e}")
+            return details
+
+    def _extract_package_prices(self):
+        """기존 메서드를 새로운 패키지 추출 메서드로 대체"""
+        package_info = self._extract_package_info()
+        
+        # 기존 형식과의 호환성을 위해 가격만 추출
+        prices = {}
+        for package_name, info in package_info.items():
+            if isinstance(info, dict) and 'price' in info:
+                prices[package_name] = info['price']
+        
+        return prices
+
+    # 전체 서비스 정보에 패키지 상세 정보 포함하도록 수정
     def crawl_single_service(self, service_url):
-        """개별 서비스 페이지 크롤링"""
+        """개별 서비스 페이지 크롤링 - 패키지 상세 정보 포함"""
         try:
             self.driver.get(service_url)
             time.sleep(3)
             
             service_data = {
                 'service_url': service_url,
-                'packages': self._extract_package_prices(),
+                'packages': self._extract_package_info(),  # 상세 정보 포함
                 'skill_level': self._extract_skill_level(),
                 'team_size': self._extract_team_size()
             }
@@ -803,100 +1144,6 @@ class ProfileCrawler(BaseCrawler):
         except Exception as e:
             print(f"서비스 페이지 크롤링 실패: {e}")
             return None
-
-    def _extract_package_prices(self):
-        """패키지별 가격 추출 - 개선된 버전"""
-        packages = {}
-        
-        try:
-            # 패키지 버튼들이 있는 컨테이너 찾기
-            package_container = self.driver.find_element(
-                By.XPATH, "//*[@class='relative flex w-full rounded-t-lg border border-b-0 border-gray-300']"
-            )
-            
-            # 패키지 버튼들 찾기
-            package_buttons = package_container.find_elements(By.TAG_NAME, "button")
-            
-            if not package_buttons:
-                # 버튼이 없으면 기본 가격만 추출
-                return self._extract_single_price()
-            else:
-                # 각 패키지 버튼 클릭해서 가격 수집
-                package_types = ['STANDARD', 'DELUXE', 'PREMIUM']
-                
-                for i, button in enumerate(package_buttons):
-                    try:
-                        package_name = package_types[i] if i < len(package_types) else f'PACKAGE_{i+1}'
-                        
-                        print(f"{package_name} 패키지 가격 추출 시도")
-                        
-                        # 버튼 클릭
-                        self.driver.execute_script("arguments[0].click();", button)
-                        time.sleep(2)  # 로딩 대기시간 증가
-                        
-                        # 여러 방법으로 가격 찾기
-                        price = self._find_price_with_multiple_selectors()
-                        
-                        if price:
-                            packages[package_name] = price
-                            print(f"{package_name} 가격: {price}")
-                        else:
-                            print(f"{package_name} 가격을 찾을 수 없음")
-                        
-                    except Exception as e:
-                        print(f"패키지 {i+1} 가격 추출 실패: {e}")
-                        continue
-            
-            return packages
-            
-        except Exception as e:
-            print(f"패키지 컨테이너 찾기 실패: {e}")
-            # 대안: 단일 가격 시도
-            return self._extract_single_price()
-
-    def _extract_single_price(self):
-        """단일 가격 추출"""
-        price = self._find_price_with_multiple_selectors()
-        if price:
-            return {'SINGLE': price}
-        return {}
-
-    def _find_price_with_multiple_selectors(self):
-        """여러 선택자로 가격 찾기"""
-        price_selectors = [
-            "//*[@class='text-[18px] font-bold leading-[27px] text-gray-800 flex items-center gap-1']",
-            "//*[contains(@class, 'font-bold') and contains(text(), '원')]",
-            "//*[contains(@class, 'price')]",
-            "//*[contains(text(), '원') and contains(@class, 'font-bold')]",
-            "//*[contains(@class, 'text-') and contains(@class, 'font-bold')]//text()[contains(., '원')]/..",
-        ]
-        
-        for selector in price_selectors:
-            try:
-                elements = self.driver.find_elements(By.XPATH, selector)
-                for element in elements:
-                    text = element.text.strip()
-                    if text and ('원' in text or ',' in text):  # 가격으로 보이는 텍스트
-                        print(f"가격 발견 (선택자: {selector[:50]}...): {text}")
-                        return text
-            except Exception as e:
-                continue
-        
-        print("모든 가격 선택자로 가격을 찾을 수 없음")
-        
-        # 디버깅: 페이지의 모든 가격 관련 텍스트 출력
-        try:
-            all_elements = self.driver.find_elements(By.XPATH, "//*[contains(text(), '원')]")
-            print("페이지의 모든 '원' 포함 텍스트:")
-            for i, elem in enumerate(all_elements[:5]):  # 처음 5개만
-                try:
-                    print(f"  {i+1}: '{elem.text}' (태그: {elem.tag_name}, 클래스: {elem.get_attribute('class')})")
-                except:
-                    pass
-        except:
-            pass
-        
-        return ""
 
     def _extract_skill_level(self):
         """기술 수준 추출"""
