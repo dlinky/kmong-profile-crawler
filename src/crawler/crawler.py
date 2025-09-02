@@ -13,6 +13,7 @@ class BaseCrawler:
         self.driver = self._setup_driver()
     
     def _setup_driver(self):
+        """최적화된 드라이버 설정 - 기존 메서드 교체"""
         options = Options()
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
@@ -20,8 +21,21 @@ class BaseCrawler:
         options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
         
         driver = webdriver.Chrome(options=options)
-        driver.implicitly_wait(10)
+        driver.implicitly_wait(2)  # 10초 → 2초로 단축
         return driver
+    
+    def _extract_with_beautifulsoup(self):
+        """BeautifulSoup으로 빠른 HTML 파싱 - 새로 추가"""
+        from bs4 import BeautifulSoup
+        
+        try:
+            # 한 번에 전체 HTML 가져오기
+            html = self.driver.page_source
+            soup = BeautifulSoup(html, 'html.parser')
+            return soup
+        except Exception as e:
+            print(f"BeautifulSoup 파싱 실패: {e}")
+            return None
     
     def save_data(self, data, filename):
         """데이터 저장 - 덮어쓰기 모드"""
@@ -165,24 +179,26 @@ class ProfileCrawler(BaseCrawler):
         super().__init__()
     
     def crawl_seller_profile(self, seller_name):
-        """개별 판매자 프로필 크롤링"""
+        """기존 메서드를 최적화된 버전으로 교체"""
         profile_url = f"https://kmong.com/@{seller_name}"
-        print(f"프로필 크롤링 시작: {seller_name} ({profile_url})")
+        print(f"프로필 크롤링 시작: {seller_name}")
         
         try:
             self.driver.get(profile_url)
-            time.sleep(3)
+            time.sleep(3)  # 페이지 로딩만 대기
             
-            # 페이지 로딩 확인
-            time.sleep(3)
+            # BeautifulSoup으로 한 번에 파싱
+            soup = self._extract_with_beautifulsoup()
+            if not soup:
+                return {'seller_name': seller_name, 'error': 'HTML 파싱 실패'}
             
             profile_data = {
                 'seller_name': seller_name,
                 'profile_url': profile_url,
-                'introduction': self._extract_introduction(),
-                'career': self._extract_career(),
-                'specialties': self._extract_specialties(),
-                'skills': self._extract_skills()
+                'introduction': self._extract_introduction_fast(soup),
+                'career': self._extract_career_fast(soup),
+                'specialties': self._extract_specialties_fast(soup),
+                'skills': self._extract_skills_fast(soup)
             }
             
             print(f"프로필 크롤링 완료: {seller_name}")
@@ -190,32 +206,47 @@ class ProfileCrawler(BaseCrawler):
             
         except Exception as e:
             print(f"프로필 크롤링 실패 - {seller_name}: {e}")
-            return {
-                'seller_name': seller_name,
-                'profile_url': profile_url,
-                'error': str(e)
-            }
+            return {'seller_name': seller_name, 'profile_url': profile_url, 'error': str(e)}
     
-    def _extract_introduction(self):
-        """자기소개 추출"""
+    def _extract_introduction_fast(self, soup):
+        """빠른 자기소개 추출"""
         try:
-            intro_element = self.driver.find_element(
-                By.XPATH, "//*[@class='ProfileDescriptionSection__desctiption']"
-            )
-            return intro_element.text.strip()
+            intro_element = soup.find(class_='ProfileDescriptionSection__desctiption')
+            return intro_element.text.strip() if intro_element else ""
         except Exception as e:
             print(f"자기소개 추출 실패: {e}")
             return ""
     
-    def _extract_career(self):
-        """경력사항 추출"""
-        print("경력사항 추출")
-        return self._extract_section_data("경력사항", "ProfileSkillSection__tag")
-    
-    def _extract_skills(self):
-        """보유 기술 추출"""
-        print("보유 기술 추출")
-        return self._extract_section_data("보유 기술", "ProfileSkillSection__tag")
+    # 새로 추가
+    def _extract_section_data_fast(self, soup, section_title, tag_class):
+        """빠른 섹션 데이터 추출"""
+        try:
+            section_titles = soup.find_all(class_="ProfileSectionTitle")
+            
+            for title in section_titles:
+                if section_title in title.text.strip():
+                    parent_div = title.parent.parent if title.parent else None
+                    if parent_div:
+                        tags = parent_div.find_all(class_=tag_class)
+                        tag_texts = [tag.text.strip() for tag in tags if tag.text.strip()]
+                        if tag_texts:
+                            print(f"{section_title} 추출 완료: {len(tag_texts)}개")
+                            return tag_texts
+            return []
+            
+        except Exception as e:
+            print(f"{section_title} 추출 실패: {e}")
+            return []
+
+    # 기존 _extract_career를 이걸로 교체  
+    def _extract_career_fast(self, soup):
+        """빠른 경력사항 추출"""
+        return self._extract_section_data_fast(soup, "경력사항", "ProfileSkillSection__tag")
+
+    # 기존 _extract_skills를 이걸로 교체
+    def _extract_skills_fast(self, soup):
+        """빠른 보유 기술 추출"""
+        return self._extract_section_data_fast(soup, "보유 기술", "ProfileSkillSection__tag")
 
     def _extract_section_data(self, section_title, tag_class):
         try:
@@ -265,92 +296,35 @@ class ProfileCrawler(BaseCrawler):
             print(f"{section_title} 추출 실패: {e}")
             return []
 
-    def _extract_specialties(self):
-        """전문분야 및 상세분야 추출 (IT·프로그래밍만) - 구조 기반 수정"""
+    # 기존 _extract_specialties를 이걸로 교체
+    def _extract_specialties_fast(self, soup):
+        """빠른 전문분야 추출"""
         try:
-            section_titles = self.driver.find_elements(By.CLASS_NAME, "ProfileSectionTitle")
+            specialty_sections = soup.find_all(class_="ProfileSkillSection__specialty")
             
-            for title in section_titles:
-                if "전문분야" in title.text:
-                    print("전문분야 섹션 발견")
+            for specialty in specialty_sections:
+                full_text = specialty.text.strip()
+                if "IT·프로그래밍" in full_text:
+                    lines = [line.strip() for line in full_text.split('\n') if line.strip()]
                     
-                    # 전문분야 섹션 전체 컨테이너 찾기
-                    section_container = title.find_element(By.XPATH, "./../../..")
+                    it_found = False
+                    tags = []
                     
-                    # IT·프로그래밍 제목을 가진 div 찾기
-                    it_titles = section_container.find_elements(By.CLASS_NAME, "ProfileSkillSection__title")
-                    
-                    for it_title in it_titles:
-                        title_text = it_title.text.strip()
-                        print(f"전문분야 제목 발견: '{title_text}'")
+                    for line in lines:
+                        if "IT·프로그래밍" in line:
+                            it_found = True
+                            continue
                         
-                        if "IT" in title_text and "프로그래밍" in title_text:
-                            print(f"IT·프로그래밍 전문분야 발견: {title_text}")
-                            
-                            try:
-                                # IT·프로그래밍 제목 다음에 오는 태그들 찾기
-                                # 방법 1: 다음 형제 요소들에서 태그 찾기
-                                next_elements = it_title.find_elements(By.XPATH, "./following-sibling::*")
-                                
-                                all_tags = []
-                                for element in next_elements:
-                                    # 다음 ProfileSkillSection__title이 나오면 중단
-                                    if "ProfileSkillSection__title" in element.get_attribute("class"):
-                                        break
-                                    
-                                    # 태그들 찾기
-                                    tags = element.find_elements(By.CLASS_NAME, "ProfileSkillSection__tag")
-                                    for tag in tags:
-                                        tag_text = tag.text.strip()
-                                        if tag_text:
-                                            all_tags.append(tag_text)
-                                
-                                if all_tags:
-                                    print(f"IT·프로그래밍 태그들: {all_tags}")
-                                    return all_tags
-                                
-                                # 방법 2: 부모 요소에서 태그들 찾기 (바로 다음)
-                                parent = it_title.find_element(By.XPATH, "./..")
-                                tags = parent.find_elements(By.CLASS_NAME, "ProfileSkillSection__tag")
-                                if tags:
-                                    tag_texts = [tag.text.strip() for tag in tags if tag.text.strip()]
-                                    print(f"부모에서 찾은 IT·프로그래밍 태그들: {tag_texts}")
-                                    return tag_texts
-                                    
-                            except Exception as e:
-                                print(f"IT 프로그래밍 태그 추출 실패: {e}")
+                        if it_found:
+                            if line and not (line.startswith('·') and '·' in line and len(line) < 20):
+                                if '·' in line and len(line) < 20:
+                                    break
+                                tags.append(line)
                     
-                    # 대안: 텍스트 파싱으로 추출
-                    print("대안 방법: 텍스트 파싱 시도")
-                    specialties = section_container.find_elements(By.CLASS_NAME, "ProfileSkillSection__specialty")
-                    
-                    for specialty in specialties:
-                        full_text = specialty.text.strip()
-                        if "IT·프로그래밍" in full_text:
-                            lines = full_text.split('\n')
-                            
-                            # IT·프로그래밍 이후의 줄들 추출
-                            it_found = False
-                            tags = []
-                            
-                            for line in lines:
-                                line = line.strip()
-                                if "IT·프로그래밍" in line:
-                                    it_found = True
-                                    continue
-                                
-                                if it_found:
-                                    # 다음 전문분야가 나오면 중단
-                                    if line and not line.startswith('·') and '·' in line and len(line) < 20:
-                                        break
-                                    if line:
-                                        tags.append(line)
-                            
-                            if tags:
-                                print(f"텍스트 파싱으로 추출한 IT·프로그래밍 태그들: {tags}")
-                                return tags
+                    if tags:
+                        print(f"IT·프로그래밍 태그들: {tags}")
+                        return tags
             
-            print("IT·프로그래밍 전문분야를 찾을 수 없습니다.")
             return []
             
         except Exception as e:
@@ -382,12 +356,12 @@ class ProfileCrawler(BaseCrawler):
             df = pd.read_csv(csv_file_path)
             seller_names = df['seller_name'].unique().tolist()  # 중복 제거
             
-            # 개발 단계에서 제한 적용
+            # limit 기본값을 None으로 설정하여 전체 처리
             if limit:
                 seller_names = seller_names[:limit]
-                print(f"개발 모드: {limit}명만 크롤링합니다")
-            
-            print(f"CSV에서 {len(seller_names)}명의 판매자 크롤링 예정")
+                print(f"제한 모드: {limit}명만 크롤링합니다")
+            else:
+                print(f"전체 모드: {len(seller_names)}명 크롤링합니다")
             
             profiles = self.crawl_multiple_profiles(seller_names)
             
@@ -400,7 +374,7 @@ class ProfileCrawler(BaseCrawler):
             print(f"CSV 파일 읽기 실패: {e}")
             return []
 
-    def crawl_reviews(self, seller_name, max_pages=5):
+    def crawl_reviews(self, seller_name, max_pages=500):
         """리뷰 크롤링 - 리뷰 섹션 스크롤 포함"""
         profile_url = f"https://kmong.com/@{seller_name}"
         
@@ -447,24 +421,23 @@ class ProfileCrawler(BaseCrawler):
             return []
 
     def _extract_reviews_from_page(self):
-        """리뷰 섹션에서만 리뷰 추출"""
+        """기존 메서드를 최적화된 버전으로 교체"""
         reviews = []
         
         try:
-            # 리뷰 섹션 내에서만 검색
-            review_section = self.driver.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__list-group")
+            soup = self._extract_with_beautifulsoup()
+            if not soup:
+                return []
             
-            # 해당 섹션 내의 리뷰들만 추출
-            review_cards = review_section.find_elements(By.CLASS_NAME, "RatingList")
-            print(f"리뷰 섹션에서 {len(review_cards)}개 리뷰 발견")
+            review_cards = soup.find_all(class_="RatingList")
+            print(f"리뷰 {len(review_cards)}개 발견")
             
             for i, card in enumerate(review_cards):
                 try:
-                    # 1. 리뷰 작성 일시
-                    date_info = card.find_element(By.CLASS_NAME, "RatingList__rating-user-info").text.strip()
+                    date_element = card.find(class_="RatingList__rating-user-info")
+                    date_info = date_element.text.strip() if date_element else ""
                     
-                    # 2. 서비스 정보
-                    service_info = self._extract_service_info(card)
+                    service_info = self._extract_service_info_fast(card)
                     
                     review_data = {
                         'review_date': date_info,
@@ -474,23 +447,42 @@ class ProfileCrawler(BaseCrawler):
                     }
                     
                     reviews.append(review_data)
-                    print(f"  리뷰 {i+1}: {review_data['service_title'][:30]}...")
                     
                 except Exception as e:
                     print(f"개별 리뷰 {i+1} 추출 실패: {e}")
                     continue
-                    
+            
+            return reviews
+            
         except Exception as e:
-            print(f"리뷰 섹션에서 리뷰 추출 실패: {e}")
-            # 대안: 전체 페이지에서 검색
-            try:
-                review_cards = self.driver.find_elements(By.CLASS_NAME, "RatingList")
-                print(f"전체 페이지에서 {len(review_cards)}개 리뷰 발견 (대안)")
-                # 위와 동일한 추출 로직 적용
-            except:
-                print("전체 페이지에서도 리뷰를 찾을 수 없음")
+            print(f"리뷰 추출 실패: {e}")
+            # 기존 Selenium 방식으로 폴백
+            return self._extract_reviews_from_page_selenium()
+    
+    def _extract_service_info_fast(self, card_soup):
+        """새로 추가"""
+        service_info = {'title': '', 'period': '', 'amount': ''}
         
-        return reviews
+        try:
+            title_element = card_soup.find(class_="RatingList__buyer-selling-service-gig-info-title")
+            if title_element:
+                service_info['title'] = title_element.text.strip()
+            
+            if title_element and title_element.find_next_sibling('span'):
+                service_info['period'] = title_element.find_next_sibling('span').text.strip()
+            
+            amount_elements = card_soup.find_all('span')
+            for span in amount_elements:
+                text = span.text.strip()
+                if '원' in text and ',' in text:
+                    service_info['amount'] = text
+                    break
+            
+            return service_info
+            
+        except Exception as e:
+            print(f"서비스 정보 추출 실패: {e}")
+            return service_info
 
     def _extract_service_info(self, card):
         """서비스 정보 추출"""
@@ -620,22 +612,27 @@ class ProfileCrawler(BaseCrawler):
             return False
 
     def _go_to_next_review_page(self):
-        """리뷰 다음 페이지 이동 - 안정성 강화"""
+        """리뷰 다음 페이지 이동 - 페이지네이션 없는 경우 처리"""
         try:
             # 리뷰 섹션을 매번 새로 찾기
             review_section = self.driver.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__list-group")
             
+            # 페이지네이션이 있는지 먼저 확인
+            try:
+                pagination = review_section.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__pagination")
+            except:
+                print("리뷰 페이지네이션이 없음 (1페이지만 존재)")
+                return False
+            
             # 현재 페이지 번호 확인 (디버깅용)
             try:
-                current_pagination = review_section.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__pagination")
-                active_page = current_pagination.find_element(By.XPATH, ".//li[contains(@class, 'active')]/a")
+                active_page = pagination.find_element(By.XPATH, ".//li[contains(@class, 'active')]/a")
                 current_page_num = active_page.text
                 print(f"현재 리뷰 페이지: {current_page_num}")
             except:
                 print("현재 페이지 번호 확인 불가")
             
-            # 페이지네이션을 매번 새로 찾기 (DOM 재생성 대응)
-            pagination = review_section.find_element(By.CLASS_NAME, "ProfileRateEvaluationSection__pagination")
+            # ">" 버튼 찾기
             next_buttons = pagination.find_elements(By.XPATH, ".//li/a[text()='>']")
             
             if not next_buttons:
@@ -735,11 +732,20 @@ class ProfileCrawler(BaseCrawler):
         return all_profiles
 
     def _go_to_next_service_page(self):
-        """서비스 다음 페이지로 이동 - 리뷰 로직 기반"""
+        """서비스 다음 페이지로 이동 - 페이지네이션 없는 경우 처리"""
         try:
             # 서비스 섹션에서 페이지네이션 찾기
-            service_section = self.driver.find_element(By.CLASS_NAME, "ProfileServiceListSection")
-            pagination = service_section.find_element(By.CLASS_NAME, "ProfileServiceListSection__pagination")
+            try:
+                service_section = self.driver.find_element(By.CLASS_NAME, "ProfileServiceListSection")
+            except:
+                print("서비스 섹션을 찾을 수 없음")
+                return False
+            
+            try:
+                pagination = service_section.find_element(By.CLASS_NAME, "ProfileServiceListSection__pagination")
+            except:
+                print("서비스 페이지네이션이 없음 (1페이지만 존재)")
+                return False
             
             # ">" 버튼 찾기
             next_buttons = pagination.find_elements(By.XPATH, ".//li/a[text()='>']")
@@ -781,7 +787,7 @@ class ProfileCrawler(BaseCrawler):
             print(f"서비스 다음 페이지 이동 실패: {e}")
             return False
             
-    def crawl_services(self, seller_name, max_service_pages=3, max_services=10):
+    def crawl_services(self, seller_name, max_service_pages=3, max_services=None):
         """판매자의 서비스 정보 크롤링 - 페이지네이션 포함"""
         profile_url = f"https://kmong.com/@{seller_name}"
         
@@ -803,9 +809,9 @@ class ProfileCrawler(BaseCrawler):
                 return []
             
             # 제한된 수의 서비스만 처리 (너무 많으면 시간 오래 걸림)
-            if max_services:
-                service_urls = service_urls[:max_services]
-            
+            #if max_services:
+            #    service_urls = service_urls[:max_services]
+            print (f"총 {len(service_urls)}개 서비스 처리 예정")
             # 각 서비스 상세 정보 수집
             all_services = []
             for i, service_url in enumerate(service_urls, 1):
@@ -853,7 +859,7 @@ class ProfileCrawler(BaseCrawler):
         print("서비스 탭 활성화 실패")
         return False
 
-    def _get_service_list(self, max_pages=5):
+    def _get_service_list(self, max_pages=100):
         """서비스 목록 URLs 수집 - 페이지네이션 포함"""
         all_service_urls = []
         current_page = 1
