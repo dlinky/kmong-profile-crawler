@@ -2,6 +2,8 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from src.crawler.crawler import SellersCrawler, ProfileCrawler
+from datetime import datetime
+import time
 
 def log(message):
     print(f"[{datetime.now().strftime("%H:%M:%S.%f")[:-3]}] {message}")
@@ -13,12 +15,13 @@ def main():
         # 카테고리 크롤링
         log("=== 카테고리 크롤링 시작 ===")
         sellers_crawler = SellersCrawler()
-        category_ids = [661, 663, 645, 605]
+        category_ids = [663, 661, 645, 605]
         
         try:
             all_sellers = sellers_crawler.crawl_multiple_categories(category_ids)
             sellers_crawler.save_data(all_sellers, 'all_sellers')
-            log(f"카테고리 크롤링 완료: {len(all_sellers)}명")
+            all_sellers_unique = sellers_crawler.create_unique_sellers_csv()
+            log(f"카테고리 크롤링 완료: {len(all_sellers_unique)}명")
         finally:
             sellers_crawler.close()
     
@@ -28,7 +31,7 @@ def main():
         profile_crawler = ProfileCrawler()
         
         try:
-            profiles = profile_crawler.crawl_from_csv('output/all_sellers.csv')  # limit 제거
+            profiles = profile_crawler.crawl_from_csv('output/seller_names.csv')  # limit 제거
             log(f"프로필 크롤링 완료: {len(profiles)}명")
         finally:
             profile_crawler.close()
@@ -60,7 +63,7 @@ def main():
         try:
             # CSV에서 모든 판매자 읽어오기
             import pandas as pd
-            df = pd.read_csv('output/all_sellers.csv')
+            df = pd.read_csv('output/seller_names.csv')
             seller_names = df['seller_name'].unique().tolist()
             
             all_data = []

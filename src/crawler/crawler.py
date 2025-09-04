@@ -62,15 +62,12 @@ class SellersCrawler(BaseCrawler):
     def __init__(self):
         super().__init__()
         self.driver.get("https://kmong.com/category/661")
-        time.sleep(1)
+        time.sleep(3)
     
     def crawl_category_sellers(self, category_id):
         """카테고리의 모든 판매자 정보 수집"""
         all_sellers = []
         page = 1
-
-        self.driver.get(f"https://kmong.com/category/{category_id}?page={page}")
-        time.sleep(1)
         
         while True:
             log(f"카테고리 {category_id}, 페이지 {page} 크롤링 중...")
@@ -89,7 +86,7 @@ class SellersCrawler(BaseCrawler):
                 log(f"서비스 개수: {service_count_text}")
                 
                 # "0개의 서비스"면 종료
-                if "0개의 서비스" in service_count_text:
+                if "0개의 서비스" == service_count_text:
                     log(f"카테고리 {category_id} 크롤링 완료 (총 {len(all_sellers)}명)")
                     break
                     
@@ -98,6 +95,7 @@ class SellersCrawler(BaseCrawler):
                 break
             
             # 해당 페이지의 판매자들 수집
+            log("parsing sellers")
             page_sellers = self._extract_sellers_from_page()
             
             if not page_sellers:
@@ -175,6 +173,32 @@ class SellersCrawler(BaseCrawler):
             time.sleep(3)
         
         return all_data
+
+    def create_unique_sellers_csv(self, input_csv='output/all_sellers.csv', output_csv='output/seller_names.csv'):
+        """중복 제거된 판매자 이름만 저장"""
+        try:
+            # CSV 파일 읽기
+            df = pd.read_csv(input_csv)
+            print(f"전체 데이터: {len(df)}개")
+            
+            # seller_name 기준으로 중복 제거
+            unique_sellers = df['seller_name'].unique()
+            print(f"중복 제거 후: {len(unique_sellers)}명")
+            
+            # 새로운 DataFrame 생성 (seller_name만)
+            unique_df = pd.DataFrame({
+                'seller_name': unique_sellers
+            })
+            
+            # CSV로 저장
+            unique_df.to_csv(output_csv, index=False, encoding='utf-8-sig')
+            print(f"중복 제거된 판매자 목록 저장 완료: {output_csv}")
+            
+            return unique_sellers.tolist()
+            
+        except Exception as e:
+            print(f"중복 제거 실패: {e}")
+            return []
 
 class ProfileCrawler(BaseCrawler):
     """개별 판매자 프로필 상세 정보 크롤링"""
