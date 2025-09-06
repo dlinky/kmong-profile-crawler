@@ -11,11 +11,13 @@ import time
 import re
 from bs4 import BeautifulSoup
 import csv
+from random import random
 
 def log(message):
     print(f"{datetime.now().strftime("%H:%M:%S.%f")[:-3]} {message}")
 class BaseCrawler:
     def __init__(self):
+        time.sleep(random())
         self.driver = self._setup_driver()
 
     def _setup_driver(self):
@@ -112,7 +114,7 @@ class CategoryCrawler(BaseCrawler):
                 log("단일 페이지입니다.")
                 return service_amount, service_list
 
-            time.sleep(1)
+            time.sleep(0.5+random())
             page_idx += 1
         
     def save_result(self, all_service_infos):
@@ -137,7 +139,7 @@ class ProfileCrawler(BaseCrawler):
     def crawl_profile(self, seller_name):
         profile_url = f"https://kmong.com/@{seller_name}"
         self.driver.get(profile_url)
-        time.sleep(1)
+        time.sleep(0.7+random())
 
         soup = self._extract_with_soup()
 
@@ -201,12 +203,13 @@ class ProfileCrawler(BaseCrawler):
                 for specialties in specialty_dict.values():
                     specialty_len += len(specialties)
                 # log(f"{section_title} 추출 완료: {specialty_len}개")
+                return specialty_dict
 
             else:
                 title_divs = div.find_all('div', 'ProfileSectionTitle')
                 for title_div in title_divs:
                     if title_div.text.strip() == section_title:
-                        parent_div = title_div.parent.parent if title_div.parent else None
+                        parent_div = title_div.parent
                         if parent_div:
                             tags = parent_div.find_all('div', 'ProfileSkillSection__tag')
                             tag_texts = [tag.text.strip() for tag in tags if tag.text.strip()]
@@ -218,13 +221,15 @@ class ProfileCrawler(BaseCrawler):
             log(f"{section_title} 추출 불가 : {e}")
 
     def _extract_total_jobs(self, soup):
-        profile_div = soup.find('div', 'ProfileInformationSection__section')
-        description_divs = profile_div.find_all('span', 'ProfileInformationSection__section-infomation-description')
-        for description_div in description_divs:
-            # log(f"총 작업 수 : {description_div.text}")
-            if "개" in description_div.text.strip():
-                return description_div.text.strip().replace("개","")
-        # log(f"총 작업 수를 찾을 수 없습니다.")
+        try:
+            profile_div = soup.find('div', 'ProfileInformationSection__section')
+            description_divs = profile_div.find_all('span', 'ProfileInformationSection__section-infomation-description')
+            for description_div in description_divs:
+                # log(f"총 작업 수 : {description_div.text}")
+                if "개" in description_div.text.strip():
+                    return description_div.text.strip().replace("개","")
+        except Exception as e:
+            log(f"총 작업 수를 찾을 수 없습니다. : {e}")
 
     def _extract_reviews(self):
         reviews = []

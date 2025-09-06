@@ -29,7 +29,7 @@ def crawl_profiles(seller_names=None):
 
 def main():
     choice = input("1. 카테고리별 판매자 크롤링\n2. 판매자별 프로필, 리뷰 크롤링\n3. 서비스 정보 크롤링\n4. 데이터 정제\n5. All-in-One\n: ")
-    process_count = 1
+    process_count = 3
     # process_count = input("가동할 프로세스 수를 입력하세요(기본=1) :")
     try:
         process_count = int(process_count)
